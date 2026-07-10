@@ -1,0 +1,225 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useLedger } from "@/components/ledger-context";
+import { Card, EmptyState, PageHeader } from "@/components/ui";
+import { formatCurrency, formatDate, formatSignedCurrency, monthKey } from "@/lib/format";
+
+type DashboardData = {
+  month: string;
+  totalBalance: number;
+  accountCount: number;
+  spent: number;
+  income: number;
+  budgetTotal: number;
+  recent: Array<{
+    id: string;
+    name: string;
+    amount: number;
+    date: string;
+    merchantName: string | null;
+    category: { name: string } | null;
+  }>;
+  categorySpend: Array<{
+    name: string;
+    spent: number;
+    budget: number | null;
+  }>;
+  holdings: Array<{
+    id: string;
+    name: string;
+    symbol: string | null;
+    value: number | null;
+    quantity: number;
+  }>;
+};
+
+export default function DashboardPage() {
+  const { ledger } = useLedger();
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/dashboard?ledger=${ledger}&month=${monthKey()}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Failed to load");
+      setData(json);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load");
+    } finally {
+      setLoading(false);
+    }
+  }, [ledger]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const remaining =
+    data && data.budgetTotal > 0 ? data.budgetTotal - data.spent : null;
+
+  return (
+    <div>
+      <PageHeader
+        title="Dashboard"
+        description={`${ledger === "personal" ? "Personal" : "Business"} · ${monthKey()}`}
+      />
+
+      {error ? (
+        <p className="mb-4 text-sm text-[var(--danger)]">{error}</p>
+      ) : null}
+
+      {loading && !data ? (
+        <p className="text-[var(--muted)]">Loading…</p>
+      ) : data && data.accountCount === 0 ? (
+        <EmptyState
+          title="Connect your first account"
+          description="Link Chase or Robinhood through Plaid to see balances and spending here."
+          action={
+            <Link
+              href="/accounts"
+              className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white"
+            >
+              Go to Accounts
+            </Link>
+          }
+        />
+      ) : data ? (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Card>
+              <p className="text-sm text-[var(--muted)]">Balance</p>
+              <p className="mt-2 font-[family-name:var(--font-display)] text-2xl">
+                {formatCurrency(data.totalBalance)}
+              </p>
+            </Card>
+            <Card>
+              <p className="text-sm text-[var(--muted)]">Spent this month</p>
+              <p className="mt-2 font-[family-name:var(--font-display)] text-2xl">
+                {formatCurrency(data.spent)}
+              </p>
+            </Card>
+            <Card>
+              <p className="text-sm text-[var(--muted)]">Income this month</p>
+              <p className="mt-2 font-[family-name:var(--font-display)] text-2xl">
+                {formatCurrency(data.income)}
+              </p>
+            </Card>
+            <Card>
+              <p className="text-sm text-[var(--muted)]">Budget remaining</p>
+              <p className="mt-2 font-[family-name:var(--font-display)] text-2xl">
+                {remaining === null ? "—" : formatCurrency(remaining)}
+              </p>
+            </Card>
+          </div>
+
+          <div className="mt-8 grid gap-6 lg:grid-cols-2">
+            <Card>
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="font-[family-name:var(--font-display)] text-lg">
+                  Top categories
+                </h2>
+                <Link href="/budgets" className="text-sm text-[var(--accent)]">
+                  Budgets
+                </Link>
+              </div>
+              {data.categorySpend.length === 0 ? (
+                <p className="text-sm text-[var(--muted)]">No spending yet this month.</p>
+              ) : (
+                <ul className="space-y-3">
+                  {data.categorySpend.map((row) => {
+                    const pct =
+                      row.budget && row.budget > 0
+                        ? Math.min(100, (row.spent / row.budget) * 100)
+                        : null;
+                    return (
+                      <li key={row.name}>
+                        <div className="flex items-center justify-between text-sm">
+                          <span>{row.name}</span>
+                          <span className="text-[var(--muted)]">
+                            {formatCurrency(row.spent)}
+                            {row.budget != null ? ` / ${formatCurrency(row.budget)}` : ""}
+                          </span>
+                        </div>
+                        {pct != null ? (
+                          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[var(--bg)]">
+                            <div
+                              className="h-full rounded-full bg-[var(--accent)]"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </Card>
+
+            <Card>
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="font-[family-name:var(--font-display)] text-lg">
+                  Recent activity
+                </h2>
+                <Link href="/transactions" className="text-sm text-[var(--accent)]">
+                  All
+                </Link>
+              </div>
+              {data.recent.length === 0 ? (
+                <p className="text-sm text-[var(--muted)]">No transactions yet.</p>
+              ) : (
+                <ul className="divide-y divide-[var(--border)]">
+                  {data.recent.map((tx) => (
+                    <li key={tx.id} className="flex items-center justify-between py-3 text-sm">
+                      <div>
+                        <p className="font-medium">{tx.merchantName || tx.name}</p>
+                        <p className="text-[var(--muted)]">
+                          {formatDate(tx.date)}
+                          {tx.category ? ` · ${tx.category.name}` : ""}
+                        </p>
+                      </div>
+                      <span
+                        className={
+                          tx.amount > 0 ? "text-[var(--fg)]" : "text-[var(--positive)]"
+                        }
+                      >
+                        {formatSignedCurrency(tx.amount)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </div>
+
+          {data.holdings.length > 0 ? (
+            <Card className="mt-6">
+              <h2 className="mb-4 font-[family-name:var(--font-display)] text-lg">
+                Holdings
+              </h2>
+              <ul className="divide-y divide-[var(--border)]">
+                {data.holdings.map((h) => (
+                  <li key={h.id} className="flex items-center justify-between py-3 text-sm">
+                    <div>
+                      <p className="font-medium">
+                        {h.symbol ? `${h.symbol} · ` : ""}
+                        {h.name}
+                      </p>
+                      <p className="text-[var(--muted)]">{h.quantity} shares</p>
+                    </div>
+                    <span>{h.value != null ? formatCurrency(h.value) : "—"}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
+        </>
+      ) : null}
+    </div>
+  );
+}

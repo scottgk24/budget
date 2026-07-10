@@ -1,0 +1,191 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  clerkId   String   @unique
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships Membership[]
+  invitesSent Invite[]     @relation("InvitesSent")
+}
+
+model Workspace {
+  id        String   @id @default(cuid())
+  name      String   @default("Family")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships  Membership[]
+  plaidItems   PlaidItem[]
+  accounts     Account[]
+  categories   Category[]
+  transactions Transaction[]
+  budgets      Budget[]
+  invites      Invite[]
+  holdings     Holding[]
+}
+
+model Membership {
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        String   @default("member") // owner | member
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+}
+
+model Invite {
+  id          String   @id @default(cuid())
+  workspaceId String
+  email       String
+  token       String   @unique
+  status      String   @default("pending") // pending | accepted | revoked
+  invitedById String
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy User      @relation("InvitesSent", fields: [invitedById], references: [id])
+
+  @@index([email, status])
+}
+
+model PlaidItem {
+  id              String    @id @default(cuid())
+  workspaceId     String
+  itemId          String    @unique
+  accessTokenEnc  String
+  institutionId   String?
+  institutionName String?
+  products        String    @default("transactions")
+  defaultLedger   String    @default("personal") // personal | business
+  cursor          String?
+  status          String    @default("active")
+  errorCode       String?
+  lastSyncedAt    DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  accounts  Account[]
+}
+
+model Account {
+  id               String   @id @default(cuid())
+  workspaceId      String
+  plaidItemId      String?
+  plaidAccountId   String?  @unique
+  name             String
+  officialName     String?
+  mask             String?
+  type             String
+  subtype          String?
+  ledger           String   @default("personal") // personal | business
+  currentBalance   Float?
+  availableBalance Float?
+  isoCurrencyCode  String?  @default("USD")
+  isHidden         Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  plaidItem    PlaidItem?    @relation(fields: [plaidItemId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+  holdings     Holding[]
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  ledger      String // personal | business
+  icon        String?
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+  budgets      Budget[]
+
+  @@unique([workspaceId, name, ledger])
+}
+
+model Transaction {
+  id                 String   @id @default(cuid())
+  workspaceId        String
+  accountId          String
+  categoryId         String?
+  plaidTransactionId String?  @unique
+  amount             Float
+  date               DateTime
+  name               String
+  merchantName       String?
+  pending            Boolean  @default(false)
+  ledger             String   @default("personal") // personal | business
+  notes              String?
+  plaidCategory      String?
+  isoCurrencyCode    String?  @default("USD")
+  isInvestment       Boolean  @default(false)
+  investmentType     String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  category  Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, ledger, date])
+  @@index([workspaceId, date])
+}
+
+model Holding {
+  id              String   @id @default(cuid())
+  workspaceId     String
+  accountId       String
+  plaidSecurityId String?
+  symbol          String?
+  name            String
+  quantity        Float
+  price           Float?
+  value           Float?
+  costBasis       Float?
+  isoCurrencyCode String?  @default("USD")
+  asOf            DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, accountId])
+}
+
+model Budget {
+  id          String   @id @default(cuid())
+  workspaceId String
+  categoryId  String
+  ledger      String // personal | business
+  month       String
+  amount      Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  category  Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, categoryId, month, ledger])
+}
