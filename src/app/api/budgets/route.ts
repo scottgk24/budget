@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { startOfMonth, subMonths } from "date-fns";
 import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
 import { excludeNonSpendCategory } from "@/lib/categories";
 import { prisma } from "@/lib/db";
 import { monthKey, monthRange } from "@/lib/format";
+
+const AVG_MONTHS = 6;
 
 export async function GET(req: Request) {
   try {
@@ -40,7 +43,37 @@ export async function GET(req: Request) {
       spent.map((s) => [s.categoryId ?? "uncategorized", s._sum.amount ?? 0]),
     );
 
-    return NextResponse.json({ categories, budgets, spentByCategory, month });
+    // Average monthly spend over the last N months (including current).
+    const avgEnd = end;
+    const avgStart = startOfMonth(subMonths(startOfMonth(start), AVG_MONTHS - 1));
+    const historical = await prisma.transaction.groupBy({
+      by: ["categoryId"],
+      where: {
+        workspaceId: workspace.id,
+        ledger,
+        date: { gte: avgStart, lte: avgEnd },
+        amount: { gt: 0 },
+        pending: false,
+        ...excludeNonSpendCategory,
+      },
+      _sum: { amount: true },
+    });
+
+    const averageByCategory = Object.fromEntries(
+      historical.map((s) => [
+        s.categoryId ?? "uncategorized",
+        Math.round(((s._sum.amount ?? 0) / AVG_MONTHS) * 100) / 100,
+      ]),
+    );
+
+    return NextResponse.json({
+      categories,
+      budgets,
+      spentByCategory,
+      averageByCategory,
+      averageMonths: AVG_MONTHS,
+      month,
+    });
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.json({ error: err.message }, { status: err.status });

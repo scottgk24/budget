@@ -10,6 +10,7 @@ import {
   monthKey,
   recentMonthKeys,
 } from "@/lib/format";
+import { merchantRuleKey } from "@/lib/categories";
 
 type Category = { id: string; name: string; ledger: string };
 type Account = { id: string; name: string; mask: string | null };
@@ -128,11 +129,12 @@ export default function TransactionsPage() {
     if (!result) return;
 
     const merchant = tx.merchantName || tx.name;
+    const cleaned = merchantRuleKey(merchant);
     const cat = categories.find((c) => c.id === nextCategoryId);
-    if (nextCategoryId && merchant && cat) {
+    if (nextCategoryId && cleaned && cat) {
       setRememberPrompt({
         txId: tx.id,
-        merchant,
+        merchant: cleaned,
         categoryId: nextCategoryId,
         categoryName: cat.name,
       });

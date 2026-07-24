@@ -228,9 +228,6 @@ export async function getWorkspaceContext() {
 }
 
 export async function seedDefaultCategories(workspaceId: string) {
-  const existing = await prisma.category.count({ where: { workspaceId } });
-  if (existing > 0) return;
-
   const personal = defaultCategoriesForLedger("personal").map((name) => ({
     workspaceId,
     name,
@@ -244,7 +241,11 @@ export async function seedDefaultCategories(workspaceId: string) {
     isDefault: true,
   }));
 
-  await prisma.category.createMany({ data: [...personal, ...business] });
+  // Skip duplicates so existing workspaces pick up newly added defaults.
+  await prisma.category.createMany({
+    data: [...personal, ...business],
+    skipDuplicates: true,
+  });
 }
 
 export function requireOwner(role: string) {

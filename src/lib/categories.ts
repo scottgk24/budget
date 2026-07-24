@@ -44,8 +44,11 @@ export const PERSONAL_CATEGORIES = [
   "Dining",
   "Housing",
   "Utilities",
+  "Home Improvement",
   "Transport",
   "Healthcare",
+  "Insurance",
+  "Pets",
   "Entertainment",
   "Shopping",
   "Subscriptions",
@@ -72,9 +75,53 @@ export const BUSINESS_CATEGORIES = [
 
 export type CategorySource = "plaid" | "rule" | "user";
 
-/** Normalize merchant / name for rule matching. */
+/** Normalize merchant / description for rule matching (strip IDs, phones, etc.). */
 export function normalizeMatchValue(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
+  let s = value.trim().toLowerCase();
+
+  // Common processor / channel prefixes
+  s = s.replace(
+    /^(sq\s*\*|tst\s*\*|sp\s+|pp\s*\*|paypal\s*\*|checkcard\s+|pos\s+|debit\s+|visa\s+|mc\s+|mastercard\s+|ach\s+|wdl\s+)/i,
+    "",
+  );
+
+  // Phone numbers and long digit runs (order ids, auth codes)
+  s = s.replace(/\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b/g, " ");
+  s = s.replace(/\b\d{6,}\b/g, " ");
+
+  // Store numbers like #8034; turn * into spaces so HLU*HULU → hlu hulu
+  s = s.replace(/#\w+/g, " ");
+  s = s.replace(/\*/g, " ");
+
+  // Standalone numbers (store 42, terminal 3)
+  s = s.replace(/\b\d+\b/g, " ");
+
+  // Mixed alphanumeric refs that contain digits (1a2b3c4d, ab12cd34)
+  s = s.replace(/\b(?=[a-z]*\d)[a-z0-9]{5,}\b/gi, " ");
+
+  // Punctuation → space
+  s = s.replace(/[^a-z0-9&\s]+/g, " ");
+
+  // Boilerplate tokens + US state abbreviations
+  s = s.replace(/\b(us|usa|inc|llc|ltd|co|corp|store|stores)\b/g, " ");
+  s = s.replace(
+    /\b(al|ak|az|ar|ca|co|ct|de|fl|ga|hi|id|il|in|ia|ks|ky|la|me|md|ma|mi|mn|ms|mo|mt|ne|nv|nh|nj|nm|ny|nc|nd|oh|ok|or|pa|ri|sc|sd|tn|tx|ut|vt|va|wa|wv|wi|wy)\b/g,
+    " ",
+  );
+
+  return s.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Stable key for saving a merchant rule.
+ * Caps to the first two tokens so location suffixes ("austin") don't lock the rule
+ * to one store.
+ */
+export function merchantRuleKey(value: string): string {
+  const tokens = normalizeMatchValue(value).split(" ").filter(Boolean);
+  if (tokens.length === 0) return "";
+  if (tokens.length === 1) return tokens[0];
+  return `${tokens[0]} ${tokens[1]}`;
 }
 
 function businessRemap(name: string, ledger: Ledger): string {
@@ -82,6 +129,8 @@ function businessRemap(name: string, ledger: Ledger): string {
   if (name === "Dining") return "Meals";
   if (name === "Shopping") return "Supplies";
   if (name === "Housing") return "Office";
+  if (name === "Home Improvement") return "Supplies";
+  if (name === "Pets") return "Supplies";
   if (name === "Entertainment") return "Marketing";
   if (name === "Subscriptions") return "Software";
   if (name === "Utilities") return "Office";
@@ -143,18 +192,18 @@ const DETAILED_MAP: Record<string, string> = {
   GENERAL_MERCHANDISE_DEPARTMENT_STORES: "Shopping",
   GENERAL_MERCHANDISE_DISCOUNT_STORES: "Shopping",
   GENERAL_MERCHANDISE_ONLINE_MARKETPLACES: "Shopping",
-  GENERAL_MERCHANDISE_PET_SUPPLIES: "Shopping",
+  GENERAL_MERCHANDISE_PET_SUPPLIES: "Pets",
   GENERAL_MERCHANDISE_SPORTING_GOODS: "Shopping",
   GENERAL_MERCHANDISE_SUPERSTORES: "Shopping",
   GENERAL_MERCHANDISE_TOBACCO_AND_VAPE: "Shopping",
   GENERAL_MERCHANDISE_OTHER_GENERAL_MERCHANDISE: "Shopping",
 
   // Home
-  HOME_IMPROVEMENT_FURNITURE: "Shopping",
-  HOME_IMPROVEMENT_HARDWARE: "Shopping",
-  HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE: "Housing",
-  HOME_IMPROVEMENT_SECURITY: "Housing",
-  HOME_IMPROVEMENT_OTHER_HOME_IMPROVEMENT: "Shopping",
+  HOME_IMPROVEMENT_FURNITURE: "Home Improvement",
+  HOME_IMPROVEMENT_HARDWARE: "Home Improvement",
+  HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE: "Home Improvement",
+  HOME_IMPROVEMENT_SECURITY: "Home Improvement",
+  HOME_IMPROVEMENT_OTHER_HOME_IMPROVEMENT: "Home Improvement",
 
   // Medical / care
   MEDICAL_DENTAL_CARE: "Healthcare",
@@ -162,7 +211,7 @@ const DETAILED_MAP: Record<string, string> = {
   MEDICAL_NURSING_CARE: "Healthcare",
   MEDICAL_PHARMACIES_AND_SUPPLEMENTS: "Healthcare",
   MEDICAL_PRIMARY_CARE: "Healthcare",
-  MEDICAL_VETERINARY_SERVICES: "Healthcare",
+  MEDICAL_VETERINARY_SERVICES: "Pets",
   MEDICAL_OTHER_MEDICAL: "Healthcare",
   PERSONAL_CARE_GYMS_AND_FITNESS_CENTERS: "Healthcare",
   PERSONAL_CARE_HAIR_AND_BEAUTY: "Healthcare",
@@ -175,7 +224,7 @@ const DETAILED_MAP: Record<string, string> = {
   GENERAL_SERVICES_CHILDCARE: "Other",
   GENERAL_SERVICES_CONSULTING_AND_LEGAL: "Other",
   GENERAL_SERVICES_EDUCATION: "Other",
-  GENERAL_SERVICES_INSURANCE: "Healthcare",
+  GENERAL_SERVICES_INSURANCE: "Insurance",
   GENERAL_SERVICES_POSTAGE_AND_SHIPPING: "Shopping",
   GENERAL_SERVICES_STORAGE: "Housing",
   GENERAL_SERVICES_OTHER_GENERAL_SERVICES: "Other",
@@ -230,7 +279,7 @@ const PRIMARY_MAP: Record<string, string> = {
   TRAVEL: "Travel",
   ENTERTAINMENT: "Entertainment",
   GENERAL_MERCHANDISE: "Shopping",
-  HOME_IMPROVEMENT: "Shopping",
+  HOME_IMPROVEMENT: "Home Improvement",
   MEDICAL: "Healthcare",
   PERSONAL_CARE: "Healthcare",
   GENERAL_SERVICES: "Other",

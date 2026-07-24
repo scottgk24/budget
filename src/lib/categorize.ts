@@ -2,6 +2,7 @@ import type { Ledger } from "@/lib/types";
 import {
   type CategorySource,
   mapPlaidCategory,
+  merchantRuleKey,
   normalizeMatchValue,
 } from "@/lib/categories";
 import { prisma } from "@/lib/db";
@@ -40,18 +41,27 @@ export function matchRuleCategoryId(
   merchantName: string | null | undefined,
   name: string,
 ): string | undefined {
-  const merchant = merchantName ? normalizeMatchValue(merchantName) : null;
-  if (merchant) {
-    const hit = rules.find(
-      (r) => r.matchField === "merchant" && r.matchValue === merchant,
-    );
-    if (hit) return hit.categoryId;
+  const merchant = merchantName ? normalizeMatchValue(merchantName) : "";
+  const nameKey = normalizeMatchValue(name);
+
+  for (const r of rules) {
+    if (r.matchField !== "merchant") continue;
+    if (!r.matchValue) continue;
+
+    if (merchant && merchant === r.matchValue) return r.categoryId;
+    if (nameKey && nameKey === r.matchValue) return r.categoryId;
+
+    // Soft match: cleaned text contains the rule key (min length avoids "bp" noise)
+    if (r.matchValue.length >= 4) {
+      if (merchant.includes(r.matchValue) || nameKey.includes(r.matchValue)) {
+        return r.categoryId;
+      }
+    }
   }
 
-  const nameNorm = normalizeMatchValue(name);
   for (const r of rules) {
     if (r.matchField !== "name") continue;
-    if (nameNorm.includes(r.matchValue)) return r.categoryId;
+    if (nameKey.includes(r.matchValue)) return r.categoryId;
   }
   return undefined;
 }
@@ -172,10 +182,10 @@ export async function upsertMerchantRule(opts: {
   merchantName: string;
   categoryId: string;
   applyToPast?: boolean;
-}): Promise<{ ruleId: string; applied: number }> {
-  const matchValue = normalizeMatchValue(opts.merchantName);
-  if (!matchValue) {
-    throw new Error("Merchant name required");
+}): Promise<{ ruleId: string; applied: number; matchValue: string }> {
+  const matchValue = merchantRuleKey(opts.merchantName);
+  if (!matchValue || matchValue.length < 2) {
+    throw new Error("Merchant name too generic after cleanup");
   }
 
   const rule = await prisma.categoryRule.upsert({
@@ -199,20 +209,24 @@ export async function upsertMerchantRule(opts: {
 
   let applied = 0;
   if (opts.applyToPast !== false) {
-    // Match merchantName case-insensitively via normalized compare in JS
-    // (Postgres may not have citext). Pull candidates then filter.
     const candidates = await prisma.transaction.findMany({
       where: {
         workspaceId: opts.workspaceId,
         ledger: opts.ledger,
-        merchantName: { not: null },
         OR: [{ categorySource: null }, { categorySource: "plaid" }, { categorySource: "rule" }],
       },
-      select: { id: true, merchantName: true },
+      select: { id: true, merchantName: true, name: true },
     });
 
     const ids = candidates
-      .filter((t) => normalizeMatchValue(t.merchantName ?? "") === matchValue)
+      .filter((t) => {
+        const hit = matchRuleCategoryId(
+          [{ matchField: "merchant", matchValue, categoryId: opts.categoryId }],
+          t.merchantName,
+          t.name,
+        );
+        return Boolean(hit);
+      })
       .map((t) => t.id);
 
     if (ids.length > 0) {
@@ -224,5 +238,5 @@ export async function upsertMerchantRule(opts: {
     }
   }
 
-  return { ruleId: rule.id, applied };
+  return { ruleId: rule.id, applied, matchValue };
 }
