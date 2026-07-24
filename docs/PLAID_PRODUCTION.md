@@ -20,8 +20,9 @@ Use this when moving Budget from sandbox to live Chase / Robinhood data.
 ## 3. Webhooks
 
 1. Set `PLAID_WEBHOOK_URL=https://YOUR_DOMAIN/api/plaid/webhook` in env **and** in the Link token create call (already wired via env).
-2. Optionally set `PLAID_WEBHOOK_SECRET` and send the same value as header `x-budget-webhook-secret` from a proxy, or upgrade to Plaid JWT verification.
-3. Confirm sandbox webhooks with a tunnel (ngrok) before production.
+2. **JWT verification is required** — the app verifies the `Plaid-Verification` header (ES256 + body SHA-256) on every webhook. Unsigned webhooks are rejected.
+3. Optionally set `PLAID_WEBHOOK_SECRET` and send the same value as header `x-budget-webhook-secret` from a reverse proxy for defense-in-depth (Plaid itself does not send this header).
+4. Confirm sandbox webhooks with a tunnel (ngrok) before production.
 
 ## 4. App env (Vercel)
 

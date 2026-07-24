@@ -39,20 +39,29 @@ export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [plaidConfigured, setPlaidConfigured] = useState(true);
+  const [isOwner, setIsOwner] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
-    const res = await fetch(`/api/accounts?ledger=${ledger}`);
-    const json = await res.json();
-    if (!res.ok) {
+    const [accountsRes, workspaceRes] = await Promise.all([
+      fetch(`/api/accounts?ledger=${ledger}`),
+      fetch("/api/workspace"),
+    ]);
+    const json = await accountsRes.json();
+    if (!accountsRes.ok) {
       setError(json.error ?? "Failed to load");
       return;
     }
     setAccounts(json.accounts);
     setItems(json.items);
     setPlaidConfigured(json.plaidConfigured);
+
+    if (workspaceRes.ok) {
+      const ws = await workspaceRes.json();
+      setIsOwner(ws.role === "owner");
+    }
   }, [ledger]);
 
   useEffect(() => {
@@ -78,15 +87,32 @@ export default function AccountsPage() {
     }
   }
 
-  async function disconnect(plaidItemId: string) {
-    if (!confirm("Disconnect this institution and remove its accounts?")) return;
+  async function disconnect(plaidItemId: string, force = false) {
+    if (
+      !confirm(
+        force
+          ? "Force remove locally even if Plaid revoke failed? Confirm the Item is removed in Plaid first."
+          : "Disconnect this institution and remove its accounts?",
+      )
+    ) {
+      return;
+    }
     const res = await fetch("/api/accounts", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plaidItemId }),
+      body: JSON.stringify({ plaidItemId, force }),
     });
     const json = await res.json();
     if (!res.ok) {
+      if (json.code === "PLAID_ITEM_REMOVE_FAILED") {
+        const retry = confirm(
+          `${json.error}\n\nForce local disconnect anyway?`,
+        );
+        if (retry) {
+          await disconnect(plaidItemId, true);
+          return;
+        }
+      }
       setError(json.error ?? "Failed to disconnect");
       return;
     }
@@ -113,7 +139,7 @@ export default function AccountsPage() {
         title="Accounts"
         description="Securely connect Chase and Robinhood via Plaid. Credentials never touch our servers."
         actions={
-          plaidConfigured ? (
+          plaidConfigured && isOwner ? (
             <PlaidLinkButton ledger={ledger} onSuccess={() => void load()} />
           ) : null
         }
@@ -137,7 +163,7 @@ export default function AccountsPage() {
           title="No linked accounts"
           description="Connect Chase checking/credit or Robinhood brokerage. New connections are tagged with the current Personal/Business view."
           action={
-            plaidConfigured ? (
+            plaidConfigured && isOwner ? (
               <PlaidLinkButton ledger={ledger} onSuccess={() => void load()} />
             ) : undefined
           }
@@ -219,13 +245,15 @@ export default function AccountsPage() {
                       >
                         {syncing === item.id ? "Syncing…" : "Sync"}
                       </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={() => void disconnect(item.id)}
-                      >
-                        Disconnect
-                      </Button>
+                      {isOwner ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => void disconnect(item.id)}
+                        >
+                          Disconnect
+                        </Button>
+                      ) : null}
                     </div>
                   </li>
                 ))}

@@ -3,8 +3,15 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useLedger } from "@/components/ledger-context";
-import { Card, EmptyState, PageHeader } from "@/components/ui";
-import { formatCurrency, formatDate, formatSignedCurrency, monthKey } from "@/lib/format";
+import { SavingsChart, SpendIncomeChart, type MetricsPoint } from "@/components/metrics-charts";
+import { Button, Card, EmptyState, PageHeader } from "@/components/ui";
+import {
+  formatCurrency,
+  formatDate,
+  formatSignedCurrency,
+  monthKey,
+  type MetricsGranularity,
+} from "@/lib/format";
 
 type DashboardData = {
   month: string;
@@ -35,11 +42,31 @@ type DashboardData = {
   }>;
 };
 
+type MetricsData = {
+  granularity: MetricsGranularity;
+  series: MetricsPoint[];
+  totals: {
+    spend: number;
+    income: number;
+    savings: number;
+    savingsRate: number | null;
+  };
+};
+
+const PERIODS: Array<{ id: MetricsGranularity; label: string; hint: string }> = [
+  { id: "daily", label: "Daily", hint: "Last 30 days" },
+  { id: "monthly", label: "Monthly", hint: "Last 12 months" },
+  { id: "yearly", label: "Yearly", hint: "Last 5 years" },
+];
+
 export default function DashboardPage() {
   const { ledger } = useLedger();
   const [data, setData] = useState<DashboardData | null>(null);
+  const [metrics, setMetrics] = useState<MetricsData | null>(null);
+  const [granularity, setGranularity] = useState<MetricsGranularity>("monthly");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [metricsLoading, setMetricsLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -56,12 +83,33 @@ export default function DashboardPage() {
     }
   }, [ledger]);
 
+  const loadMetrics = useCallback(async () => {
+    setMetricsLoading(true);
+    try {
+      const res = await fetch(
+        `/api/metrics?ledger=${ledger}&granularity=${granularity}`,
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Failed to load metrics");
+      setMetrics(json);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load metrics");
+    } finally {
+      setMetricsLoading(false);
+    }
+  }, [ledger, granularity]);
+
   useEffect(() => {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    void loadMetrics();
+  }, [loadMetrics]);
+
   const remaining =
     data && data.budgetTotal > 0 ? data.budgetTotal - data.spent : null;
+  const periodHint = PERIODS.find((p) => p.id === granularity)?.hint ?? "";
 
   return (
     <div>
@@ -117,6 +165,95 @@ export default function DashboardPage() {
               </p>
             </Card>
           </div>
+
+          <section className="mt-8">
+            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 className="font-[family-name:var(--font-display)] text-xl">
+                  Spend & savings
+                </h2>
+                <p className="mt-0.5 text-sm text-[var(--muted)]">{periodHint}</p>
+              </div>
+              <div className="flex rounded-lg border border-[var(--border)] bg-[var(--surface)] p-0.5">
+                {PERIODS.map((p) => (
+                  <Button
+                    key={p.id}
+                    type="button"
+                    variant={granularity === p.id ? "primary" : "ghost"}
+                    className="px-3 py-1.5 text-xs"
+                    onClick={() => setGranularity(p.id)}
+                  >
+                    {p.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-4 grid gap-4 sm:grid-cols-3">
+              <Card>
+                <p className="text-sm text-[var(--muted)]">Spend</p>
+                <p className="mt-2 font-[family-name:var(--font-display)] text-xl">
+                  {metricsLoading && !metrics
+                    ? "…"
+                    : formatCurrency(metrics?.totals.spend ?? 0)}
+                </p>
+              </Card>
+              <Card>
+                <p className="text-sm text-[var(--muted)]">Income</p>
+                <p className="mt-2 font-[family-name:var(--font-display)] text-xl">
+                  {metricsLoading && !metrics
+                    ? "…"
+                    : formatCurrency(metrics?.totals.income ?? 0)}
+                </p>
+              </Card>
+              <Card>
+                <p className="text-sm text-[var(--muted)]">
+                  Savings
+                  {metrics?.totals.savingsRate != null
+                    ? ` · ${metrics.totals.savingsRate.toFixed(0)}% rate`
+                    : ""}
+                </p>
+                <p
+                  className={`mt-2 font-[family-name:var(--font-display)] text-xl ${
+                    (metrics?.totals.savings ?? 0) >= 0
+                      ? "text-[var(--positive)]"
+                      : "text-[var(--danger)]"
+                  }`}
+                >
+                  {metricsLoading && !metrics
+                    ? "…"
+                    : formatCurrency(metrics?.totals.savings ?? 0)}
+                </p>
+              </Card>
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-2">
+              <Card>
+                <h3 className="mb-3 font-[family-name:var(--font-display)] text-lg">
+                  Income vs spend
+                </h3>
+                {metricsLoading && !metrics ? (
+                  <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
+                    Loading charts…
+                  </p>
+                ) : (
+                  <SpendIncomeChart data={metrics?.series ?? []} />
+                )}
+              </Card>
+              <Card>
+                <h3 className="mb-3 font-[family-name:var(--font-display)] text-lg">
+                  Net savings
+                </h3>
+                {metricsLoading && !metrics ? (
+                  <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
+                    Loading charts…
+                  </p>
+                ) : (
+                  <SavingsChart data={metrics?.series ?? []} />
+                )}
+              </Card>
+            </div>
+          </section>
 
           <div className="mt-8 grid gap-6 lg:grid-cols-2">
             <Card>

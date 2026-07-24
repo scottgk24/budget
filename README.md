@@ -35,10 +35,12 @@ Open [http://localhost:3000](http://localhost:3000).
 ## Security model
 
 - Bank credentials are entered only in **Plaid Link** (OAuth for Chase). This app never sees passwords.
-- Plaid `access_token` values are **encrypted at rest** (`TOKEN_ENCRYPTION_KEY`).
+- Plaid `access_token` values are **encrypted at rest** (`TOKEN_ENCRYPTION_KEY`, 32+ chars).
 - Read-only: no ACH, transfers, or bill pay products.
-- Invite-only: family invites from Settings + optional `ALLOWED_EMAILS` allowlist.
-- Webhook endpoint: `/api/plaid/webhook` (optional `PLAID_WEBHOOK_SECRET` header check).
+- Invite-only: family invites from Settings + `ALLOWED_EMAILS` (required in production; empty allowlist is open only in local/dev).
+- Webhooks at `/api/plaid/webhook` require **Plaid JWT verification**; optional `PLAID_WEBHOOK_SECRET` for proxy defense-in-depth.
+- Only workspace owners can link or disconnect banks; disconnect fails closed if Plaid `item/remove` fails.
+- Security headers (frame deny, nosniff, referrer policy) are set in `next.config.ts`.
 
 ## Personal vs Business
 

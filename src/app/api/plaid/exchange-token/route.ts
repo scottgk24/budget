@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
+import { ensureUserAndWorkspace, requireOwner } from "@/lib/auth";
+import { handleApiError, rateLimitedResponse } from "@/lib/api-response";
 import { encryptToken } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { getPlaidClient, isPlaidConfigured } from "@/lib/plaid";
 import { syncPlaidItem } from "@/lib/sync";
 
@@ -31,11 +33,15 @@ const bodySchema = z.object({
 
 export async function POST(req: Request) {
   try {
+    const limited = rateLimit(`plaid-exchange:${clientIp(req)}`, 20, 60_000);
+    if (!limited.ok) return rateLimitedResponse(limited.retryAfter);
+
     if (!isPlaidConfigured()) {
       return NextResponse.json({ error: "Plaid is not configured" }, { status: 503 });
     }
 
-    const { workspace } = await ensureUserAndWorkspace();
+    const { workspace, membership } = await ensureUserAndWorkspace();
+    requireOwner(membership.role);
     const body = bodySchema.parse(await req.json());
     const client = getPlaidClient();
 
@@ -82,7 +88,6 @@ export async function POST(req: Request) {
       });
     }
 
-    // Kick off initial sync (best-effort)
     try {
       await syncPlaidItem(plaidItem.id);
     } catch (syncErr) {
@@ -94,13 +99,6 @@ export async function POST(req: Request) {
       accounts: accountsRes.data.accounts.length,
     });
   } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
-    }
-    console.error("exchange-token", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to exchange token" },
-      { status: 500 },
-    );
+    return handleApiError(err, "Failed to connect account");
   }
 }

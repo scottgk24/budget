@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { z } from "zod";
-import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
+import { ensureUserAndWorkspace } from "@/lib/auth";
+import { handleApiError, rateLimitedResponse } from "@/lib/api-response";
 import { prisma } from "@/lib/db";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 
 export async function GET() {
   try {
@@ -36,10 +38,7 @@ export async function GET() {
       })),
     });
   } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
-    }
-    return NextResponse.json({ error: "Failed to load settings" }, { status: 500 });
+    return handleApiError(err, "Failed to load settings");
   }
 }
 
@@ -49,6 +48,9 @@ const inviteSchema = z.object({
 
 export async function POST(req: Request) {
   try {
+    const limited = rateLimit(`invite-create:${clientIp(req)}`, 10, 60_000);
+    if (!limited.ok) return rateLimitedResponse(limited.retryAfter);
+
     const { user, workspace, membership } = await ensureUserAndWorkspace();
     if (membership.role !== "owner") {
       return NextResponse.json({ error: "Only owners can invite members" }, { status: 403 });
@@ -98,11 +100,7 @@ export async function POST(req: Request) {
       },
     });
   } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
-    }
-    console.error("invite", err);
-    return NextResponse.json({ error: "Failed to create invite" }, { status: 500 });
+    return handleApiError(err, "Failed to create invite");
   }
 }
 
@@ -123,9 +121,6 @@ export async function DELETE(req: Request) {
     });
     return NextResponse.json({ ok: true });
   } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
-    }
-    return NextResponse.json({ error: "Failed to revoke invite" }, { status: 500 });
+    return handleApiError(err, "Failed to revoke invite");
   }
 }

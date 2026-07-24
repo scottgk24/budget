@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
-import { getPlaidClient, getPlaidCountryCodes, getPlaidProducts, isPlaidConfigured } from "@/lib/plaid";
+import { ensureUserAndWorkspace, requireOwner } from "@/lib/auth";
+import { handleApiError, rateLimitedResponse } from "@/lib/api-response";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
+import {
+  getPlaidClient,
+  getPlaidCountryCodes,
+  getPlaidProducts,
+  isPlaidConfigured,
+} from "@/lib/plaid";
 import { CountryCode, Products } from "plaid";
 
 const bodySchema = z.object({
@@ -10,6 +17,9 @@ const bodySchema = z.object({
 
 export async function POST(req: Request) {
   try {
+    const limited = rateLimit(`plaid-link:${clientIp(req)}`, 20, 60_000);
+    if (!limited.ok) return rateLimitedResponse(limited.retryAfter);
+
     if (!isPlaidConfigured()) {
       return NextResponse.json(
         {
@@ -20,7 +30,8 @@ export async function POST(req: Request) {
       );
     }
 
-    const { user, workspace } = await ensureUserAndWorkspace();
+    const { user, workspace, membership } = await ensureUserAndWorkspace();
+    requireOwner(membership.role);
     const json = await req.json().catch(() => ({}));
     bodySchema.parse(json);
 
@@ -39,18 +50,10 @@ export async function POST(req: Request) {
       redirect_uri: process.env.PLAID_REDIRECT_URI || undefined,
     });
 
-    // Attach workspace id in client metadata via products only — ledger is sent on exchange
     void workspace;
 
     return NextResponse.json({ linkToken: response.data.link_token });
   } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
-    }
-    console.error("create-link-token", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to create link token" },
-      { status: 500 },
-    );
+    return handleApiError(err, "Failed to create link token");
   }
 }

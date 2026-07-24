@@ -1,26 +1,45 @@
 import { NextResponse } from "next/server";
-import { createHash } from "crypto";
 import { prisma } from "@/lib/db";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
+import {
+  verifyOptionalWebhookSecret,
+  verifyPlaidWebhookJwt,
+} from "@/lib/plaid-webhook";
+import { isPlaidConfigured } from "@/lib/plaid";
 import { syncPlaidItem } from "@/lib/sync";
 
 /**
  * Plaid webhook receiver.
- * In production, verify JWT signatures per https://plaid.com/docs/api/webhooks/webhook-verification/
- * We verify a shared secret header when PLAID_WEBHOOK_SECRET is set, and always
- * look up the Item by plaid item_id before syncing.
+ * Requires Plaid-Verification JWT (ES256) + body hash.
+ * Optional PLAID_WEBHOOK_SECRET as defense-in-depth via x-budget-webhook-secret.
+ * @see https://plaid.com/docs/api/webhooks/webhook-verification/
  */
 export async function POST(req: Request) {
   try {
-    const raw = await req.text();
-    const secret = process.env.PLAID_WEBHOOK_SECRET;
+    const limited = rateLimit(`webhook:${clientIp(req)}`, 60, 60_000);
+    if (!limited.ok) {
+      return NextResponse.json(
+        { error: "Too many requests" },
+        { status: 429, headers: { "Retry-After": String(limited.retryAfter) } },
+      );
+    }
 
-    if (secret) {
-      const provided = req.headers.get("x-budget-webhook-secret") ?? "";
-      const expected = createHash("sha256").update(secret).digest("hex");
-      const got = createHash("sha256").update(provided).digest("hex");
-      if (expected !== got) {
-        return NextResponse.json({ error: "Invalid webhook secret" }, { status: 401 });
-      }
+    if (!isPlaidConfigured()) {
+      return NextResponse.json({ error: "Plaid not configured" }, { status: 503 });
+    }
+
+    const raw = await req.text();
+
+    if (!verifyOptionalWebhookSecret(req.headers.get("x-budget-webhook-secret"))) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const jwtOk = await verifyPlaidWebhookJwt(
+      raw,
+      req.headers.get("plaid-verification"),
+    );
+    if (!jwtOk) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = JSON.parse(raw) as {
@@ -58,7 +77,6 @@ export async function POST(req: Request) {
       "HISTORICAL_UPDATE",
       "INITIAL_UPDATE",
       "TRANSACTIONS_REMOVED",
-      "DEFAULT_UPDATE",
     ]);
 
     if (body.webhook_code && syncCodes.has(body.webhook_code)) {

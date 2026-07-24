@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
+import { ensureUserAndWorkspace } from "@/lib/auth";
+import { handleApiError } from "@/lib/api-response";
 
 export async function GET() {
   try {
@@ -10,9 +11,6 @@ export async function GET() {
       role: membership.role,
     });
   } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
-    }
-    return NextResponse.json({ error: "Failed to load workspace" }, { status: 500 });
+    return handleApiError(err, "Failed to load workspace");
   }
 }

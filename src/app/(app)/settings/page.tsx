@@ -184,8 +184,13 @@ export default function SettingsPage() {
           <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-[var(--muted)]">
             <li>Bank logins happen in Plaid Link (OAuth) — we never store passwords.</li>
             <li>Plaid access tokens are encrypted at rest with TOKEN_ENCRYPTION_KEY.</li>
+            <li>Webhooks are verified with Plaid JWT signatures.</li>
             <li>This app is read-only: no transfers or bill pay.</li>
-            <li>Production: enable Clerk invite-only / ALLOWED_EMAILS and Plaid production access.</li>
+            <li>Only owners can link or disconnect banks; members can sync and view.</li>
+            <li>
+              Production: set ALLOWED_EMAILS, Clerk invite-only, Postgres, and a unique
+              TOKEN_ENCRYPTION_KEY.
+            </li>
           </ul>
         </Card>
       </div>

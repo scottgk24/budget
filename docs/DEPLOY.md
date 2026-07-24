@@ -49,16 +49,17 @@ Set these in Vercel → Project → Settings → Environment Variables:
 | `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | `/sign-up` |
 | `NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL` | `/dashboard` |
 | `NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL` | `/dashboard` |
-| `ALLOWED_EMAILS` | Comma-separated family emails |
+| `ALLOWED_EMAILS` | **Required in production** — comma-separated family emails |
 | `PLAID_CLIENT_ID` | Plaid |
 | `PLAID_SECRET` | Plaid (match `PLAID_ENV`) |
 | `PLAID_ENV` | `sandbox` then `production` |
 | `PLAID_PRODUCTS` | `transactions,investments` |
 | `PLAID_COUNTRY_CODES` | `US` |
 | `PLAID_WEBHOOK_URL` | `https://YOUR_DOMAIN/api/plaid/webhook` |
-| `PLAID_WEBHOOK_SECRET` | Optional shared secret |
+| `PLAID_WEBHOOK_SECRET` | Optional extra proxy secret (JWT verify is always on) |
+| `PLAID_REDIRECT_URI` | Optional OAuth redirect for Chase |
 | `NEXT_PUBLIC_APP_URL` | `https://YOUR_DOMAIN` |
-| `TOKEN_ENCRYPTION_KEY` | Long random string (32+ chars) |
+| `TOKEN_ENCRYPTION_KEY` | `openssl rand -base64 32` — never reuse sandbox / placeholders |
 
 ### 4. Post-deploy
 

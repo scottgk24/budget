@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
+import { ensureUserAndWorkspace } from "@/lib/auth";
+import { handleApiError, rateLimitedResponse } from "@/lib/api-response";
 import { prisma } from "@/lib/db";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { syncPlaidItem } from "@/lib/sync";
 import { isPlaidConfigured } from "@/lib/plaid";
 
@@ -11,6 +13,9 @@ const bodySchema = z.object({
 
 export async function POST(req: Request) {
   try {
+    const limited = rateLimit(`plaid-sync:${clientIp(req)}`, 30, 60_000);
+    if (!limited.ok) return rateLimitedResponse(limited.retryAfter);
+
     if (!isPlaidConfigured()) {
       return NextResponse.json({ error: "Plaid is not configured" }, { status: 503 });
     }
@@ -28,13 +33,6 @@ export async function POST(req: Request) {
     const result = await syncPlaidItem(item.id);
     return NextResponse.json({ ok: true, result });
   } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
-    }
-    console.error("sync", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Sync failed" },
-      { status: 500 },
-    );
+    return handleApiError(err, "Sync failed");
   }
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
+import { AuthError, ensureUserAndWorkspace, requireOwner } from "@/lib/auth";
+import { handleApiError } from "@/lib/api-response";
 import { prisma } from "@/lib/db";
 import { decryptToken } from "@/lib/crypto";
 import { getPlaidClient, isPlaidConfigured } from "@/lib/plaid";
@@ -52,10 +53,7 @@ export async function GET(req: Request) {
       plaidConfigured: isPlaidConfigured(),
     });
   } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
-    }
-    return NextResponse.json({ error: "Failed to load accounts" }, { status: 500 });
+    return handleApiError(err, "Failed to load accounts");
   }
 }
 
@@ -96,20 +94,21 @@ export async function PATCH(req: Request) {
 
     return NextResponse.json({ account });
   } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
-    }
-    return NextResponse.json({ error: "Failed to update account" }, { status: 500 });
+    return handleApiError(err, "Failed to update account");
   }
 }
 
 const deleteSchema = z.object({
   plaidItemId: z.string(),
+  /** Only when Plaid itemRemove already succeeded elsewhere / force cleanup. */
+  force: z.boolean().optional(),
 });
 
 export async function DELETE(req: Request) {
   try {
-    const { workspace } = await ensureUserAndWorkspace();
+    const { workspace, membership } = await ensureUserAndWorkspace();
+    requireOwner(membership.role);
+
     const body = deleteSchema.parse(await req.json());
 
     const item = await prisma.plaidItem.findFirst({
@@ -125,6 +124,16 @@ export async function DELETE(req: Request) {
         await client.itemRemove({ access_token: decryptToken(item.accessTokenEnc) });
       } catch (err) {
         console.error("itemRemove failed", err);
+        if (!body.force) {
+          return NextResponse.json(
+            {
+              error:
+                "Could not revoke bank access at Plaid. Try again, or disconnect with force after confirming in the Plaid dashboard.",
+              code: "PLAID_ITEM_REMOVE_FAILED",
+            },
+            { status: 502 },
+          );
+        }
       }
     }
 
@@ -134,6 +143,6 @@ export async function DELETE(req: Request) {
     if (err instanceof AuthError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
     }
-    return NextResponse.json({ error: "Failed to disconnect" }, { status: 500 });
+    return handleApiError(err, "Failed to disconnect");
   }
 }

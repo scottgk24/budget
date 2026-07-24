@@ -1,11 +1,28 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
+import { isProductionRuntime } from "@/lib/runtime";
 
 const ALGO = "aes-256-gcm";
 
+const PLACEHOLDER_KEYS = new Set([
+  "change-me-to-a-long-random-secret-key",
+  "change-me",
+  "changeme",
+]);
+
 function getKey(): Buffer {
   const secret = process.env.TOKEN_ENCRYPTION_KEY;
-  if (!secret || secret.length < 16) {
-    throw new Error("TOKEN_ENCRYPTION_KEY must be set (16+ characters)");
+  if (!secret || secret.length < 32) {
+    throw new Error(
+      "TOKEN_ENCRYPTION_KEY must be set (32+ characters). Generate with: openssl rand -base64 32",
+    );
+  }
+  if (PLACEHOLDER_KEYS.has(secret)) {
+    throw new Error(
+      "TOKEN_ENCRYPTION_KEY is still the example placeholder. Generate with: openssl rand -base64 32",
+    );
+  }
+  if (isProductionRuntime() && secret.length < 32) {
+    throw new Error("TOKEN_ENCRYPTION_KEY must be at least 32 characters in production");
   }
   return createHash("sha256").update(secret).digest();
 }
