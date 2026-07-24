@@ -1,6 +1,7 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import { defaultCategoriesForLedger } from "@/lib/categories";
+import { reclassifyUnlockedTransactions } from "@/lib/categorize";
 import { isProductionRuntime } from "@/lib/runtime";
 
 export class AuthError extends Error {
@@ -154,6 +155,11 @@ export async function ensureUserAndWorkspace(options?: { inviteToken?: string })
     include: { workspace: true },
   });
   if (membership) {
+    // Backfill any newly added default categories (idempotent).
+    const added = await seedDefaultCategories(membership.workspaceId);
+    if (added > 0) {
+      await reclassifyUnlockedTransactions(membership.workspaceId);
+    }
     return { user, membership, workspace: membership.workspace };
   }
 
@@ -227,25 +233,33 @@ export async function getWorkspaceContext() {
   return ensureUserAndWorkspace();
 }
 
-export async function seedDefaultCategories(workspaceId: string) {
-  const personal = defaultCategoriesForLedger("personal").map((name) => ({
-    workspaceId,
-    name,
-    ledger: "personal" as const,
-    isDefault: true,
-  }));
-  const business = defaultCategoriesForLedger("business").map((name) => ({
-    workspaceId,
-    name,
-    ledger: "business" as const,
-    isDefault: true,
-  }));
+/** Insert missing default categories. Returns how many rows were created. */
+export async function seedDefaultCategories(workspaceId: string): Promise<number> {
+  const desired = [
+    ...defaultCategoriesForLedger("personal").map((name) => ({
+      workspaceId,
+      name,
+      ledger: "personal" as const,
+      isDefault: true,
+    })),
+    ...defaultCategoriesForLedger("business").map((name) => ({
+      workspaceId,
+      name,
+      ledger: "business" as const,
+      isDefault: true,
+    })),
+  ];
 
-  // Skip duplicates so existing workspaces pick up newly added defaults.
-  await prisma.category.createMany({
-    data: [...personal, ...business],
-    skipDuplicates: true,
+  const existing = await prisma.category.findMany({
+    where: { workspaceId },
+    select: { name: true, ledger: true },
   });
+  const have = new Set(existing.map((c) => `${c.ledger}:${c.name}`));
+  const missing = desired.filter((c) => !have.has(`${c.ledger}:${c.name}`));
+  if (missing.length === 0) return 0;
+
+  const result = await prisma.category.createMany({ data: missing });
+  return result.count;
 }
 
 export function requireOwner(role: string) {

@@ -48,6 +48,8 @@ export async function POST(req: Request) {
       language: "en",
       webhook,
       redirect_uri: process.env.PLAID_REDIRECT_URI || undefined,
+      // Max Plaid allows. Only applies on first link of an Item — reconnect to change.
+      transactions: { days_requested: 730 },
     });
 
     void workspace;
