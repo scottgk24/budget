@@ -12,6 +12,7 @@ import {
   type MetricsGranularity,
   metricsBucketKey,
   metricsRange,
+  parseMetricsRangeId,
   periodBounds,
 } from "@/lib/format";
 
@@ -58,8 +59,19 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const ledger = (searchParams.get("ledger") as "personal" | "business") || "personal";
     const granularity = parseGranularity(searchParams.get("granularity"));
+    const rangeId = parseMetricsRangeId(searchParams.get("range"));
 
-    const { start, end } = metricsRange(granularity);
+    let earliestData: Date | null = null;
+    if (rangeId === "all") {
+      const first = await prisma.transaction.findFirst({
+        where: { workspaceId: workspace.id, ledger, pending: false },
+        orderBy: { date: "asc" },
+        select: { date: true },
+      });
+      earliestData = first?.date ?? null;
+    }
+
+    const { start, end } = metricsRange(rangeId, new Date(), earliestData);
 
     const [transactions, accounts] = await Promise.all([
       prisma.transaction.findMany({
@@ -131,6 +143,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ledger,
       granularity,
+      range: rangeId,
       start: start.toISOString(),
       end: end.toISOString(),
       series: buckets,

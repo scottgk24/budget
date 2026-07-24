@@ -5,13 +5,16 @@ import Link from "next/link";
 import { useLedger } from "@/components/ledger-context";
 import { BalanceChart, SavingsChart, SpendIncomeChart, type MetricsPoint } from "@/components/metrics-charts";
 import { PeriodDrilldown } from "@/components/period-drilldown";
-import { Button, Card, EmptyState, PageHeader } from "@/components/ui";
+import { Button, Card, EmptyState, PageHeader, Select } from "@/components/ui";
 import {
   formatCurrency,
   formatDate,
   formatSignedCurrency,
+  METRICS_RANGES,
   monthKey,
   type MetricsGranularity,
+  type MetricsRangeId,
+  parseMetricsRangeId,
 } from "@/lib/format";
 
 type DashboardData = {
@@ -45,6 +48,7 @@ type DashboardData = {
 
 type MetricsData = {
   granularity: MetricsGranularity;
+  range: MetricsRangeId;
   series: MetricsPoint[];
   totals: {
     spend: number;
@@ -55,11 +59,11 @@ type MetricsData = {
   };
 };
 
-const PERIODS: Array<{ id: MetricsGranularity; label: string; hint: string }> = [
-  { id: "daily", label: "Daily", hint: "Last 30 days · click a day to drill in" },
-  { id: "weekly", label: "Weekly", hint: "Last 12 weeks · click a week to drill in" },
-  { id: "monthly", label: "Monthly", hint: "Last 12 months · click a month to drill in" },
-  { id: "yearly", label: "Yearly", hint: "Last 5 years · click a year to drill in" },
+const PERIODS: Array<{ id: MetricsGranularity; label: string }> = [
+  { id: "daily", label: "Daily" },
+  { id: "weekly", label: "Weekly" },
+  { id: "monthly", label: "Monthly" },
+  { id: "yearly", label: "Yearly" },
 ];
 
 export default function DashboardPage() {
@@ -67,6 +71,7 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [metrics, setMetrics] = useState<MetricsData | null>(null);
   const [granularity, setGranularity] = useState<MetricsGranularity>("monthly");
+  const [rangeId, setRangeId] = useState<MetricsRangeId>("3m");
   const [selectedPeriodKey, setSelectedPeriodKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -91,7 +96,7 @@ export default function DashboardPage() {
     setMetricsLoading(true);
     try {
       const res = await fetch(
-        `/api/metrics?ledger=${ledger}&granularity=${granularity}`,
+        `/api/metrics?ledger=${ledger}&granularity=${granularity}&range=${rangeId}`,
       );
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Failed to load metrics");
@@ -101,7 +106,7 @@ export default function DashboardPage() {
     } finally {
       setMetricsLoading(false);
     }
-  }, [ledger, granularity]);
+  }, [ledger, granularity, rangeId]);
 
   useEffect(() => {
     void load();
@@ -113,11 +118,14 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setSelectedPeriodKey(null);
-  }, [ledger, granularity]);
+  }, [ledger, granularity, rangeId]);
 
   const remaining =
     data && data.budgetTotal > 0 ? data.budgetTotal - data.spent : null;
-  const periodHint = PERIODS.find((p) => p.id === granularity)?.hint ?? "";
+  const rangeLabel =
+    METRICS_RANGES.find((r) => r.id === rangeId)?.label ?? "3 months";
+  const bucketLabel =
+    PERIODS.find((p) => p.id === granularity)?.label.toLowerCase() ?? "month";
 
   function selectPeriod(point: MetricsPoint) {
     setSelectedPeriodKey(point.key);
@@ -184,20 +192,36 @@ export default function DashboardPage() {
                 <h2 className="font-[family-name:var(--font-display)] text-xl">
                   Spend & savings
                 </h2>
-                <p className="mt-0.5 text-sm text-[var(--muted)]">{periodHint}</p>
+                <p className="mt-0.5 text-sm text-[var(--muted)]">
+                  {rangeLabel} · {bucketLabel} buckets · click a point to drill in
+                </p>
               </div>
-              <div className="flex rounded-lg border border-[var(--border)] bg-[var(--surface)] p-0.5">
-                {PERIODS.map((p) => (
-                  <Button
-                    key={p.id}
-                    type="button"
-                    variant={granularity === p.id ? "primary" : "ghost"}
-                    className="px-3 py-1.5 text-xs"
-                    onClick={() => setGranularity(p.id)}
-                  >
-                    {p.label}
-                  </Button>
-                ))}
+              <div className="flex flex-wrap items-center gap-2">
+                <Select
+                  aria-label="Chart timespan"
+                  value={rangeId}
+                  onChange={(e) => setRangeId(parseMetricsRangeId(e.target.value))}
+                  className="py-1.5"
+                >
+                  {METRICS_RANGES.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.label}
+                    </option>
+                  ))}
+                </Select>
+                <div className="flex rounded-lg border border-[var(--border)] bg-[var(--surface)] p-0.5">
+                  {PERIODS.map((p) => (
+                    <Button
+                      key={p.id}
+                      type="button"
+                      variant={granularity === p.id ? "primary" : "ghost"}
+                      className="px-3 py-1.5 text-xs"
+                      onClick={() => setGranularity(p.id)}
+                    >
+                      {p.label}
+                    </Button>
+                  ))}
+                </div>
               </div>
             </div>
 

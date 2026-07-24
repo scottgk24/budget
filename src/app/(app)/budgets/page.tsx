@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CategoryPieChart } from "@/components/budget-charts";
 import { useLedger } from "@/components/ledger-context";
-import { Card, EmptyState, PageHeader } from "@/components/ui";
+import { Card, EmptyState, Input, PageHeader } from "@/components/ui";
 import { cn, formatCurrency, monthKey } from "@/lib/format";
 
 type Category = { id: string; name: string };
@@ -18,7 +19,9 @@ function niceMax(n: number): number {
   if (target <= 1000) return 1000;
   if (target <= 2500) return 2500;
   if (target <= 5000) return 5000;
-  const step = target > 10_000 ? 1000 : 500;
+  if (target <= 10_000) return 10_000;
+  if (target <= 25_000) return 25_000;
+  const step = target > 50_000 ? 5000 : 1000;
   return Math.ceil(target / step) * step;
 }
 
@@ -26,14 +29,28 @@ function sliderStep(max: number): number {
   if (max <= 250) return 5;
   if (max <= 1000) return 10;
   if (max <= 5000) return 25;
-  return 50;
+  if (max <= 10_000) return 50;
+  return 100;
+}
+
+/** Generous ceiling so high-limit categories (housing, etc.) aren't stuck low. */
+function baseSliderMax(average: number, spent: number, budgetAmt: number): number {
+  return niceMax(
+    Math.max(
+      average * 5,
+      spent * 2,
+      budgetAmt,
+      budgetAmt > 0 ? budgetAmt * 1.25 : 0,
+      2000,
+    ),
+  );
 }
 
 function BudgetSlider({
   value,
   average,
   spent,
-  max,
+  baseMax,
   onChange,
   onCommit,
   disabled,
@@ -41,14 +58,35 @@ function BudgetSlider({
   value: number;
   average: number;
   spent: number;
-  max: number;
+  baseMax: number;
   onChange: (next: number) => void;
   onCommit: (next: number) => void;
   disabled?: boolean;
 }) {
+  const [max, setMax] = useState(() => Math.max(baseMax, value, 2000));
+  const step = sliderStep(max);
   const avgPct = max > 0 ? Math.min(100, (average / max) * 100) : 0;
   const spentPct = max > 0 ? Math.min(100, (spent / max) * 100) : 0;
-  const step = sliderStep(max);
+
+  useEffect(() => {
+    setMax((prev) => Math.max(prev, baseMax, value));
+  }, [baseMax, value]);
+
+  function expandIfNeeded(next: number) {
+    // At the end of the track → grow so the user can keep increasing.
+    if (next >= max - step) {
+      setMax((prev) => niceMax(Math.max(prev * 1.5, next + step * 10)));
+    }
+  }
+
+  function handleChange(next: number) {
+    onChange(next);
+    expandIfNeeded(next);
+  }
+
+  function handleCommit(el: HTMLInputElement) {
+    onCommit(Number(el.value));
+  }
 
   return (
     <div className="w-full">
@@ -68,7 +106,6 @@ function BudgetSlider({
         ) : null}
 
         <div className="relative h-2 rounded-full bg-[var(--bg)]">
-          {/* This month spent marker */}
           {spent > 0 ? (
             <div
               className="pointer-events-none absolute top-1/2 z-[1] h-3 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--danger)]/70"
@@ -99,11 +136,20 @@ function BudgetSlider({
               "[&::-moz-range-thumb]:bg-[var(--surface)]",
               "disabled:cursor-not-allowed disabled:opacity-50",
             )}
-            onChange={(e) => onChange(Number(e.target.value))}
-            onPointerUp={(e) => onCommit(Number((e.target as HTMLInputElement).value))}
+            onChange={(e) => handleChange(Number(e.target.value))}
+            onPointerDown={(e) => {
+              e.currentTarget.setPointerCapture(e.pointerId);
+            }}
+            onPointerUp={(e) => handleCommit(e.currentTarget)}
+            onPointerCancel={(e) => handleCommit(e.currentTarget)}
             onKeyUp={(e) => {
-              if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "Home" || e.key === "End") {
-                onCommit(Number((e.target as HTMLInputElement).value));
+              if (
+                e.key === "ArrowLeft" ||
+                e.key === "ArrowRight" ||
+                e.key === "Home" ||
+                e.key === "End"
+              ) {
+                handleCommit(e.currentTarget);
               }
             }}
           />
@@ -113,6 +159,52 @@ function BudgetSlider({
         <span>$0</span>
         <span>{formatCurrency(max)}</span>
       </div>
+    </div>
+  );
+}
+
+function BudgetAmountInput({
+  value,
+  disabled,
+  onCommit,
+}: {
+  value: number;
+  disabled?: boolean;
+  onCommit: (next: number) => void;
+}) {
+  const [text, setText] = useState(String(Math.round(value)));
+
+  useEffect(() => {
+    setText(String(Math.round(value)));
+  }, [value]);
+
+  function commit() {
+    const parsed = Number(text.replace(/[^0-9.]/g, ""));
+    if (!Number.isFinite(parsed)) {
+      setText(String(Math.round(value)));
+      return;
+    }
+    onCommit(Math.max(0, Math.round(parsed)));
+  }
+
+  return (
+    <div className="flex items-center justify-end gap-1">
+      <span className="text-sm text-[var(--muted)]">$</span>
+      <Input
+        type="text"
+        inputMode="decimal"
+        disabled={disabled}
+        aria-label="Budget amount"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.currentTarget.blur();
+          }
+        }}
+        className="w-24 py-1 text-right font-[family-name:var(--font-display)] text-xl tabular-nums"
+      />
     </div>
   );
 }
@@ -160,8 +252,36 @@ export default function BudgetsPage() {
     [categories],
   );
 
+  const totalBudgeted = useMemo(
+    () => rows.reduce((sum, c) => sum + (drafts[c.id] ?? 0), 0),
+    [rows, drafts],
+  );
+  const totalSpent = useMemo(
+    () => rows.reduce((sum, c) => sum + (spentByCategory[c.id] ?? 0), 0),
+    [rows, spentByCategory],
+  );
+  const budgetSlices = useMemo(
+    () =>
+      rows
+        .map((c) => ({ id: c.id, name: c.name, value: drafts[c.id] ?? 0 }))
+        .filter((s) => s.value > 0),
+    [rows, drafts],
+  );
+  const spendSlices = useMemo(
+    () =>
+      rows
+        .map((c) => ({
+          id: c.id,
+          name: c.name,
+          value: spentByCategory[c.id] ?? 0,
+        }))
+        .filter((s) => s.value > 0),
+    [rows, spentByCategory],
+  );
+
   async function save(categoryId: string, amount: number) {
     const rounded = Math.max(0, Math.round(amount));
+    setDrafts((d) => ({ ...d, [categoryId]: rounded }));
     if (saved[categoryId] === rounded) return;
     setSaving(categoryId);
     setError(null);
@@ -175,7 +295,6 @@ export default function BudgetsPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Save failed");
       setSaved((s) => ({ ...s, [categoryId]: rounded }));
-      setDrafts((d) => ({ ...d, [categoryId]: rounded }));
       setNotice("Budget saved");
       window.setTimeout(() => setNotice(null), 1500);
     } catch (err) {
@@ -189,7 +308,7 @@ export default function BudgetsPage() {
     <div>
       <PageHeader
         title="Budgets"
-        description={`Drag to set monthly limits · avg marker = last ${averageMonths} months · ${ledger === "personal" ? "Personal" : "Business"} · ${month}`}
+        description={`Drag or type monthly limits · avg marker = last ${averageMonths} months · ${ledger === "personal" ? "Personal" : "Business"} · ${month}`}
       />
 
       {error ? <p className="mb-4 text-sm text-[var(--danger)]">{error}</p> : null}
@@ -201,66 +320,126 @@ export default function BudgetsPage() {
           description="Categories are created when your workspace is set up."
         />
       ) : (
-        <div className="grid gap-3">
-          {rows.map((cat) => {
-            const spent = spentByCategory[cat.id] ?? 0;
-            const average = averageByCategory[cat.id] ?? 0;
-            const budgetAmt = drafts[cat.id] ?? 0;
-            const max = niceMax(Math.max(average * 2.5, spent * 1.25, budgetAmt, 200));
-            const pct = budgetAmt > 0 ? Math.min(100, (spent / budgetAmt) * 100) : 0;
-            const over = budgetAmt > 0 && spent > budgetAmt;
+        <>
+          <div className="mb-6 grid gap-4 sm:grid-cols-3">
+            <Card>
+              <p className="text-sm text-[var(--muted)]">Total budgeted</p>
+              <p className="mt-2 font-[family-name:var(--font-display)] text-2xl tabular-nums">
+                {formatCurrency(totalBudgeted)}
+              </p>
+            </Card>
+            <Card>
+              <p className="text-sm text-[var(--muted)]">Spent this month</p>
+              <p className="mt-2 font-[family-name:var(--font-display)] text-2xl tabular-nums">
+                {formatCurrency(totalSpent)}
+              </p>
+            </Card>
+            <Card>
+              <p className="text-sm text-[var(--muted)]">Remaining</p>
+              <p
+                className={`mt-2 font-[family-name:var(--font-display)] text-2xl tabular-nums ${
+                  totalBudgeted - totalSpent >= 0
+                    ? "text-[var(--positive)]"
+                    : "text-[var(--danger)]"
+                }`}
+              >
+                {totalBudgeted > 0
+                  ? formatCurrency(totalBudgeted - totalSpent)
+                  : "—"}
+              </p>
+            </Card>
+          </div>
 
-            return (
-              <Card key={cat.id} className="space-y-3">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-medium">{cat.name}</p>
-                    <p className="text-sm text-[var(--muted)]">
-                      Spent{" "}
-                      <span className={over ? "text-[var(--danger)]" : undefined}>
-                        {formatCurrency(spent)}
-                      </span>
-                      {budgetAmt > 0 ? ` of ${formatCurrency(budgetAmt)}` : " · no limit set"}
-                      {average > 0 ? ` · avg ${formatCurrency(average)}/mo` : ""}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-[family-name:var(--font-display)] text-xl tabular-nums">
-                      {formatCurrency(budgetAmt)}
-                    </p>
-                    <p className="text-[11px] text-[var(--muted)]">
-                      {saving === cat.id ? "Saving…" : "Budget"}
-                    </p>
-                  </div>
-                </div>
+          <div className="mb-6 grid gap-4 lg:grid-cols-2">
+            <Card>
+              <h2 className="mb-1 font-[family-name:var(--font-display)] text-lg">
+                Budget mix
+              </h2>
+              <p className="mb-3 text-sm text-[var(--muted)]">
+                How this month&apos;s budget is allocated
+              </p>
+              <CategoryPieChart
+                data={budgetSlices}
+                emptyLabel="Set some category budgets to see the mix"
+              />
+            </Card>
+            <Card>
+              <h2 className="mb-1 font-[family-name:var(--font-display)] text-lg">
+                Spend mix
+              </h2>
+              <p className="mb-3 text-sm text-[var(--muted)]">
+                Where spending went this month
+              </p>
+              <CategoryPieChart
+                data={spendSlices}
+                emptyLabel="No spending in these categories yet"
+              />
+            </Card>
+          </div>
 
-                {budgetAmt > 0 ? (
-                  <div className="h-1.5 overflow-hidden rounded-full bg-[var(--bg)]">
-                    <div
-                      className={`h-full rounded-full ${over ? "bg-[var(--danger)]" : "bg-[var(--accent)]"}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                ) : null}
+          <div className="grid gap-3">
+            {rows.map((cat) => {
+              const spent = spentByCategory[cat.id] ?? 0;
+              const average = averageByCategory[cat.id] ?? 0;
+              const budgetAmt = drafts[cat.id] ?? 0;
+              const max = baseSliderMax(average, spent, budgetAmt);
+              const pct = budgetAmt > 0 ? Math.min(100, (spent / budgetAmt) * 100) : 0;
+              const over = budgetAmt > 0 && spent > budgetAmt;
 
-                <BudgetSlider
-                  value={budgetAmt}
-                  average={average}
-                  spent={spent}
-                  max={max}
-                  disabled={saving === cat.id}
-                  onChange={(next) => setDrafts((d) => ({ ...d, [cat.id]: next }))}
-                  onCommit={(next) => void save(cat.id, next)}
-                />
-              </Card>
-            );
-          })}
-        </div>
+              return (
+                <Card key={cat.id} className="space-y-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium">{cat.name}</p>
+                      <p className="text-sm text-[var(--muted)]">
+                        Spent{" "}
+                        <span className={over ? "text-[var(--danger)]" : undefined}>
+                          {formatCurrency(spent)}
+                        </span>
+                        {budgetAmt > 0 ? ` of ${formatCurrency(budgetAmt)}` : " · no limit set"}
+                        {average > 0 ? ` · avg ${formatCurrency(average)}/mo` : ""}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <BudgetAmountInput
+                        value={budgetAmt}
+                        disabled={saving === cat.id}
+                        onCommit={(next) => void save(cat.id, next)}
+                      />
+                      <p className="text-[11px] text-[var(--muted)]">
+                        {saving === cat.id ? "Saving…" : "Budget"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {budgetAmt > 0 ? (
+                    <div className="h-1.5 overflow-hidden rounded-full bg-[var(--bg)]">
+                      <div
+                        className={`h-full rounded-full ${over ? "bg-[var(--danger)]" : "bg-[var(--accent)]"}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  ) : null}
+
+                  <BudgetSlider
+                    value={budgetAmt}
+                    average={average}
+                    spent={spent}
+                    baseMax={max}
+                    disabled={saving === cat.id}
+                    onChange={(next) => setDrafts((d) => ({ ...d, [cat.id]: next }))}
+                    onCommit={(next) => void save(cat.id, next)}
+                  />
+                </Card>
+              );
+            })}
+          </div>
+        </>
       )}
 
       <p className="mt-6 text-xs text-[var(--muted)]">
-        Green fill is your budget. The top label marks average monthly spend. The thin red tick is
-        this month&apos;s spend so far.
+        Drag the slider or type an amount. Sliding to the end expands the range. The top label marks
+        average monthly spend; the thin red tick is this month&apos;s spend so far.
       </p>
     </div>
   );

@@ -11,11 +11,35 @@ import {
   endOfWeek,
   subDays,
   subMonths,
-  subWeeks,
-  subYears,
 } from "date-fns";
 
 export type MetricsGranularity = "daily" | "weekly" | "monthly" | "yearly";
+
+/** Lookback window for dashboard metrics charts. */
+export type MetricsRangeId = "30d" | "3m" | "6m" | "12m" | "ytd" | "all";
+
+export const METRICS_RANGES: Array<{ id: MetricsRangeId; label: string }> = [
+  { id: "30d", label: "30 days" },
+  { id: "3m", label: "3 months" },
+  { id: "6m", label: "6 months" },
+  { id: "12m", label: "12 months" },
+  { id: "ytd", label: "Year to date" },
+  { id: "all", label: "All time" },
+];
+
+export function parseMetricsRangeId(raw: string | null | undefined): MetricsRangeId {
+  if (
+    raw === "30d" ||
+    raw === "3m" ||
+    raw === "6m" ||
+    raw === "12m" ||
+    raw === "ytd" ||
+    raw === "all"
+  ) {
+    return raw;
+  }
+  return "3m";
+}
 
 export function formatCurrency(amount: number, currency = "USD"): string {
   return new Intl.NumberFormat("en-US", {
@@ -103,26 +127,38 @@ export function periodBounds(
   return { start, end: endOfYear(start), label: key };
 }
 
-/** Date range for metrics charts by granularity. */
+/**
+ * Date range for metrics charts.
+ * `earliestData` is used when range is `all` (first synced transaction).
+ */
 export function metricsRange(
-  granularity: MetricsGranularity,
+  rangeId: MetricsRangeId,
   now: Date = new Date(),
+  earliestData?: Date | null,
 ): { start: Date; end: Date } {
   const end = endOfDay(now);
-  if (granularity === "daily") {
-    return { start: startOfDay(subDays(now, 29)), end };
+  let start: Date;
+
+  if (rangeId === "30d") {
+    start = startOfDay(subDays(now, 29));
+  } else if (rangeId === "3m") {
+    start = startOfMonth(subMonths(now, 2));
+  } else if (rangeId === "6m") {
+    start = startOfMonth(subMonths(now, 5));
+  } else if (rangeId === "12m") {
+    start = startOfMonth(subMonths(now, 11));
+  } else if (rangeId === "ytd") {
+    start = startOfYear(now);
+  } else {
+    start = earliestData
+      ? startOfDay(earliestData)
+      : startOfMonth(subMonths(now, 11));
   }
-  if (granularity === "weekly") {
-    return {
-      start: startOfWeek(subWeeks(now, 11), WEEK_OPTS),
-      end,
-    };
-  }
-  if (granularity === "monthly") {
-    return { start: startOfMonth(subMonths(now, 11)), end };
-  }
-  return { start: startOfYear(subYears(now, 4)), end: endOfYear(now) };
+
+  if (start > end) start = startOfDay(now);
+  return { start, end };
 }
+
 
 export function formatDate(date: Date | string): string {
   const d = typeof date === "string" ? parseISO(date) : date;
