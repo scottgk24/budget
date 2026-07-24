@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
+import { excludeNonSpendCategory, excludeTransfersCategory, NON_SPEND_CATEGORIES } from "@/lib/categories";
 import { prisma } from "@/lib/db";
 import { monthKey, monthRange } from "@/lib/format";
 
@@ -29,31 +30,26 @@ export async function GET(req: Request) {
       take: 8,
     });
 
-    const spent = monthTx
-      .filter((t) => t.amount > 0)
-      .reduce((sum, t) => sum + t.amount, 0);
-    const income = monthTx
-      .filter((t) => t.amount < 0)
-      .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+    const baseMonth = {
+      workspaceId: workspace.id,
+      ledger,
+      date: { gte: start, lte: end },
+      pending: false,
+    };
 
-    // Recompute spend from all month transactions (not just recent 8)
     const spendAgg = await prisma.transaction.aggregate({
       where: {
-        workspaceId: workspace.id,
-        ledger,
-        date: { gte: start, lte: end },
-        pending: false,
+        ...baseMonth,
         amount: { gt: 0 },
+        ...excludeNonSpendCategory,
       },
       _sum: { amount: true },
     });
     const incomeAgg = await prisma.transaction.aggregate({
       where: {
-        workspaceId: workspace.id,
-        ledger,
-        date: { gte: start, lte: end },
-        pending: false,
+        ...baseMonth,
         amount: { lt: 0 },
+        ...excludeTransfersCategory,
       },
       _sum: { amount: true },
     });
@@ -67,11 +63,9 @@ export async function GET(req: Request) {
     const byCategory = await prisma.transaction.groupBy({
       by: ["categoryId"],
       where: {
-        workspaceId: workspace.id,
-        ledger,
-        date: { gte: start, lte: end },
-        pending: false,
+        ...baseMonth,
         amount: { gt: 0 },
+        ...excludeNonSpendCategory,
       },
       _sum: { amount: true },
     });
@@ -80,6 +74,7 @@ export async function GET(req: Request) {
       where: { workspaceId: workspace.id, ledger },
     });
     const catMap = Object.fromEntries(categories.map((c) => [c.id, c.name]));
+    const nonSpend = new Set<string>(NON_SPEND_CATEGORIES);
 
     const categorySpend = byCategory
       .map((row) => ({
@@ -88,6 +83,7 @@ export async function GET(req: Request) {
         spent: row._sum.amount ?? 0,
         budget: budgets.find((b) => b.categoryId === row.categoryId)?.amount ?? null,
       }))
+      .filter((row) => !nonSpend.has(row.name))
       .sort((a, b) => b.spent - a.spent)
       .slice(0, 6);
 
@@ -100,9 +96,6 @@ export async function GET(req: Request) {
       orderBy: { value: "desc" },
       take: 8,
     });
-
-    void spent;
-    void income;
 
     return NextResponse.json({
       month,

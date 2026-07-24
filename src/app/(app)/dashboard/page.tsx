@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useLedger } from "@/components/ledger-context";
-import { SavingsChart, SpendIncomeChart, type MetricsPoint } from "@/components/metrics-charts";
+import { BalanceChart, SavingsChart, SpendIncomeChart, type MetricsPoint } from "@/components/metrics-charts";
+import { PeriodDrilldown } from "@/components/period-drilldown";
 import { Button, Card, EmptyState, PageHeader } from "@/components/ui";
 import {
   formatCurrency,
@@ -50,13 +51,15 @@ type MetricsData = {
     income: number;
     savings: number;
     savingsRate: number | null;
+    balance?: number;
   };
 };
 
 const PERIODS: Array<{ id: MetricsGranularity; label: string; hint: string }> = [
-  { id: "daily", label: "Daily", hint: "Last 30 days" },
-  { id: "monthly", label: "Monthly", hint: "Last 12 months" },
-  { id: "yearly", label: "Yearly", hint: "Last 5 years" },
+  { id: "daily", label: "Daily", hint: "Last 30 days · click a day to drill in" },
+  { id: "weekly", label: "Weekly", hint: "Last 12 weeks · click a week to drill in" },
+  { id: "monthly", label: "Monthly", hint: "Last 12 months · click a month to drill in" },
+  { id: "yearly", label: "Yearly", hint: "Last 5 years · click a year to drill in" },
 ];
 
 export default function DashboardPage() {
@@ -64,6 +67,7 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [metrics, setMetrics] = useState<MetricsData | null>(null);
   const [granularity, setGranularity] = useState<MetricsGranularity>("monthly");
+  const [selectedPeriodKey, setSelectedPeriodKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [metricsLoading, setMetricsLoading] = useState(true);
@@ -107,9 +111,17 @@ export default function DashboardPage() {
     void loadMetrics();
   }, [loadMetrics]);
 
+  useEffect(() => {
+    setSelectedPeriodKey(null);
+  }, [ledger, granularity]);
+
   const remaining =
     data && data.budgetTotal > 0 ? data.budgetTotal - data.spent : null;
   const periodHint = PERIODS.find((p) => p.id === granularity)?.hint ?? "";
+
+  function selectPeriod(point: MetricsPoint) {
+    setSelectedPeriodKey(point.key);
+  }
 
   return (
     <div>
@@ -237,7 +249,11 @@ export default function DashboardPage() {
                     Loading charts…
                   </p>
                 ) : (
-                  <SpendIncomeChart data={metrics?.series ?? []} />
+                  <SpendIncomeChart
+                    data={metrics?.series ?? []}
+                    onSelectPeriod={selectPeriod}
+                    selectedKey={selectedPeriodKey}
+                  />
                 )}
               </Card>
               <Card>
@@ -249,11 +265,53 @@ export default function DashboardPage() {
                     Loading charts…
                   </p>
                 ) : (
-                  <SavingsChart data={metrics?.series ?? []} />
+                  <SavingsChart
+                    data={metrics?.series ?? []}
+                    onSelectPeriod={selectPeriod}
+                    selectedKey={selectedPeriodKey}
+                  />
                 )}
               </Card>
             </div>
+
+            <Card className="mt-6">
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <h3 className="font-[family-name:var(--font-display)] text-lg">
+                    Account balance over time
+                  </h3>
+                  <p className="mt-0.5 text-sm text-[var(--muted)]">
+                    Reconstructed from current balances and synced transactions
+                  </p>
+                </div>
+                <p className="text-sm tabular-nums text-[var(--muted)]">
+                  Now{" "}
+                  {metricsLoading && !metrics
+                    ? "…"
+                    : formatCurrency(metrics?.totals.balance ?? data.totalBalance)}
+                </p>
+              </div>
+              {metricsLoading && !metrics ? (
+                <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
+                  Loading charts…
+                </p>
+              ) : (
+                <BalanceChart
+                  data={metrics?.series ?? []}
+                  onSelectPeriod={selectPeriod}
+                  selectedKey={selectedPeriodKey}
+                />
+              )}
+            </Card>
           </section>
+
+          <PeriodDrilldown
+            open={selectedPeriodKey != null}
+            onClose={() => setSelectedPeriodKey(null)}
+            ledger={ledger}
+            granularity={granularity}
+            periodKey={selectedPeriodKey}
+          />
 
           <div className="mt-8 grid gap-6 lg:grid-cols-2">
             <Card>

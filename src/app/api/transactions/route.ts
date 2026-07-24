@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { endOfDay, parseISO, startOfDay } from "date-fns";
 import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
+import { upsertMerchantRule } from "@/lib/categorize";
 import { prisma } from "@/lib/db";
 import { monthRange } from "@/lib/format";
+import type { Ledger } from "@/lib/types";
 
 export async function GET(req: Request) {
   try {
@@ -10,6 +13,10 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const ledger = searchParams.get("ledger") as "personal" | "business" | null;
     const month = searchParams.get("month");
+    const from = searchParams.get("from")?.trim() || null;
+    const to = searchParams.get("to")?.trim() || null;
+    const accountId = searchParams.get("accountId")?.trim() || null;
+    const categoryId = searchParams.get("categoryId")?.trim() || null;
     const q = searchParams.get("q")?.trim();
     const take = Math.min(Number(searchParams.get("limit") ?? 100), 500);
 
@@ -17,9 +24,22 @@ export async function GET(req: Request) {
     if (ledger === "personal" || ledger === "business") {
       where.ledger = ledger;
     }
-    if (month) {
+    if (from && to) {
+      where.date = {
+        gte: startOfDay(parseISO(from)),
+        lte: endOfDay(parseISO(to)),
+      };
+    } else if (month) {
       const { start, end } = monthRange(month);
       where.date = { gte: start, lte: end };
+    }
+    if (accountId) {
+      where.accountId = accountId;
+    }
+    if (categoryId === "none") {
+      where.categoryId = null;
+    } else if (categoryId) {
+      where.categoryId = categoryId;
     }
     if (q) {
       where.OR = [
@@ -53,6 +73,9 @@ const patchSchema = z.object({
   categoryId: z.string().nullable().optional(),
   ledger: z.enum(["personal", "business"]).optional(),
   notes: z.string().nullable().optional(),
+  /** Persist a merchant → category rule and apply to past matches. */
+  rememberMerchant: z.boolean().optional(),
+  applyToPast: z.boolean().optional(),
 });
 
 export async function PATCH(req: Request) {
@@ -76,17 +99,44 @@ export async function PATCH(req: Request) {
       }
     }
 
+    const categoryChanging = body.categoryId !== undefined;
     const transaction = await prisma.transaction.update({
       where: { id: body.id },
       data: {
         categoryId: body.categoryId === undefined ? undefined : body.categoryId,
+        categorySource: categoryChanging
+          ? body.categoryId
+            ? "user"
+            : null
+          : undefined,
         ledger: body.ledger,
         notes: body.notes === undefined ? undefined : body.notes,
       },
       include: { category: true, account: true },
     });
 
-    return NextResponse.json({ transaction });
+    let ruleApplied: { ruleId: string; applied: number } | null = null;
+    if (
+      body.rememberMerchant &&
+      body.categoryId &&
+      (transaction.merchantName || transaction.name)
+    ) {
+      ruleApplied = await upsertMerchantRule({
+        workspaceId: workspace.id,
+        ledger: (body.ledger ?? transaction.ledger) as Ledger,
+        merchantName: transaction.merchantName || transaction.name,
+        categoryId: body.categoryId,
+        applyToPast: body.applyToPast,
+      });
+      // Mark this tx as rule-sourced after creating the rule
+      await prisma.transaction.update({
+        where: { id: transaction.id },
+        data: { categorySource: "rule" },
+      });
+      transaction.categorySource = "rule";
+    }
+
+    return NextResponse.json({ transaction, ruleApplied });
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.json({ error: err.message }, { status: err.status });

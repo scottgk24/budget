@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
+import { excludeNonSpendCategory } from "@/lib/categories";
 import { prisma } from "@/lib/db";
 import { monthKey, monthRange } from "@/lib/format";
 
@@ -30,6 +31,7 @@ export async function GET(req: Request) {
         date: { gte: start, lte: end },
         amount: { gt: 0 },
         pending: false,
+        ...excludeNonSpendCategory,
       },
       _sum: { amount: true },
     });

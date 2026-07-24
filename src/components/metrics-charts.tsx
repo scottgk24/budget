@@ -21,6 +21,13 @@ export type MetricsPoint = {
   spend: number;
   income: number;
   savings: number;
+  balance?: number;
+};
+
+type ChartProps = {
+  data: MetricsPoint[];
+  onSelectPeriod?: (point: MetricsPoint) => void;
+  selectedKey?: string | null;
 };
 
 const COLORS = {
@@ -28,9 +35,11 @@ const COLORS = {
   income: "#1f6b4a",
   savingsPos: "#1f6b4a",
   savingsNeg: "#b42318",
+  balance: "#1a5f4a",
   grid: "#d9d2c5",
   muted: "#5f6f67",
   surface: "#fffcf7",
+  selected: "#0f3d32",
 };
 
 function ChartTooltip({
@@ -51,11 +60,38 @@ function ChartTooltip({
           {p.name}: {formatCurrency(p.value)}
         </p>
       ))}
+      <p className="mt-1 text-xs text-[var(--muted)]">Click to break down</p>
     </div>
   );
 }
 
-export function SpendIncomeChart({ data }: { data: MetricsPoint[] }) {
+function handleChartClick(
+  state: {
+    activeIndex?: number | string | null | undefined;
+    activeLabel?: string | number | undefined;
+  },
+  data: MetricsPoint[],
+  onSelectPeriod?: (point: MetricsPoint) => void,
+) {
+  if (!onSelectPeriod) return;
+  const raw = state.activeIndex;
+  const index =
+    typeof raw === "number"
+      ? raw
+      : typeof raw === "string" && /^\d+$/.test(raw)
+        ? Number(raw)
+        : -1;
+  if (index >= 0 && data[index]) {
+    onSelectPeriod(data[index]);
+    return;
+  }
+  if (state.activeLabel != null) {
+    const byLabel = data.find((d) => d.label === String(state.activeLabel));
+    if (byLabel) onSelectPeriod(byLabel);
+  }
+}
+
+export function SpendIncomeChart({ data, onSelectPeriod, selectedKey }: ChartProps) {
   const hasData = data.some((d) => d.spend > 0 || d.income > 0);
 
   if (!hasData) {
@@ -67,9 +103,13 @@ export function SpendIncomeChart({ data }: { data: MetricsPoint[] }) {
   }
 
   return (
-    <div className="h-72 w-full">
+    <div className={`h-72 w-full ${onSelectPeriod ? "cursor-pointer" : ""}`}>
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+        <AreaChart
+          data={data}
+          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+          onClick={(state) => handleChartClick(state, data, onSelectPeriod)}
+        >
           <defs>
             <linearGradient id="incomeFill" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={COLORS.income} stopOpacity={0.28} />
@@ -108,17 +148,17 @@ export function SpendIncomeChart({ data }: { data: MetricsPoint[] }) {
             fill="url(#incomeFill)"
             strokeWidth={2}
             dot={false}
-            activeDot={{ r: 4 }}
+            activeDot={{ r: 5 }}
           />
           <Area
             type="monotone"
             dataKey="spend"
             name="Spend"
-            stroke={COLORS.spend}
+            stroke={selectedKey ? COLORS.selected : COLORS.spend}
             fill="url(#spendFill)"
             strokeWidth={2}
             dot={false}
-            activeDot={{ r: 4 }}
+            activeDot={{ r: 5 }}
           />
         </AreaChart>
       </ResponsiveContainer>
@@ -126,7 +166,7 @@ export function SpendIncomeChart({ data }: { data: MetricsPoint[] }) {
   );
 }
 
-export function SavingsChart({ data }: { data: MetricsPoint[] }) {
+export function SavingsChart({ data, onSelectPeriod, selectedKey }: ChartProps) {
   const hasData = data.some((d) => d.spend > 0 || d.income > 0);
 
   if (!hasData) {
@@ -138,9 +178,13 @@ export function SavingsChart({ data }: { data: MetricsPoint[] }) {
   }
 
   return (
-    <div className="h-72 w-full">
+    <div className={`h-72 w-full ${onSelectPeriod ? "cursor-pointer" : ""}`}>
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+        <BarChart
+          data={data}
+          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+          onClick={(state) => handleChartClick(state, data, onSelectPeriod)}
+        >
           <CartesianGrid stroke={COLORS.grid} strokeDasharray="3 3" vertical={false} />
           <XAxis
             dataKey="label"
@@ -162,11 +206,78 @@ export function SavingsChart({ data }: { data: MetricsPoint[] }) {
             {data.map((entry) => (
               <Cell
                 key={entry.key}
-                fill={entry.savings >= 0 ? COLORS.savingsPos : COLORS.savingsNeg}
+                fill={
+                  entry.key === selectedKey
+                    ? COLORS.selected
+                    : entry.savings >= 0
+                      ? COLORS.savingsPos
+                      : COLORS.savingsNeg
+                }
+                cursor="pointer"
               />
             ))}
           </Bar>
         </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+export function BalanceChart({ data, onSelectPeriod, selectedKey }: ChartProps) {
+  const series = data.map((d) => ({ ...d, balance: d.balance ?? 0 }));
+  const hasData = series.some((d) => d.balance !== 0 || d.spend > 0 || d.income > 0);
+
+  if (!hasData) {
+    return (
+      <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
+        No balance history in this period yet.
+      </p>
+    );
+  }
+
+  return (
+    <div className={`h-72 w-full ${onSelectPeriod ? "cursor-pointer" : ""}`}>
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart
+          data={series}
+          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+          onClick={(state) => handleChartClick(state, series, onSelectPeriod)}
+        >
+          <defs>
+            <linearGradient id="balanceFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={COLORS.balance} stopOpacity={0.3} />
+              <stop offset="100%" stopColor={COLORS.balance} stopOpacity={0.02} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid stroke={COLORS.grid} strokeDasharray="3 3" vertical={false} />
+          <XAxis
+            dataKey="label"
+            tick={{ fill: COLORS.muted, fontSize: 11 }}
+            tickLine={false}
+            axisLine={{ stroke: COLORS.grid }}
+            interval="preserveStartEnd"
+            minTickGap={28}
+          />
+          <YAxis
+            tick={{ fill: COLORS.muted, fontSize: 11 }}
+            tickLine={false}
+            axisLine={false}
+            tickFormatter={formatCompactCurrency}
+            width={52}
+            domain={["auto", "auto"]}
+          />
+          <Tooltip content={<ChartTooltip />} />
+          <Area
+            type="monotone"
+            dataKey="balance"
+            name="Balance"
+            stroke={selectedKey ? COLORS.selected : COLORS.balance}
+            fill="url(#balanceFill)"
+            strokeWidth={2}
+            dot={false}
+            activeDot={{ r: 5 }}
+          />
+        </AreaChart>
       </ResponsiveContainer>
     </div>
   );

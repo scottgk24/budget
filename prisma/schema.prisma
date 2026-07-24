@@ -25,14 +25,15 @@ model Workspace {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships  Membership[]
-  plaidItems   PlaidItem[]
-  accounts     Account[]
-  categories   Category[]
-  transactions Transaction[]
-  budgets      Budget[]
-  invites      Invite[]
-  holdings     Holding[]
+  memberships    Membership[]
+  plaidItems     PlaidItem[]
+  accounts       Account[]
+  categories     Category[]
+  categoryRules  CategoryRule[]
+  transactions   Transaction[]
+  budgets        Budget[]
+  invites        Invite[]
+  holdings       Holding[]
 }
 
 model Membership {
@@ -117,11 +118,31 @@ model Category {
   isDefault   Boolean  @default(false)
   createdAt   DateTime @default(now())
 
-  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace    Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   transactions Transaction[]
   budgets      Budget[]
+  rules        CategoryRule[]
 
   @@unique([workspaceId, name, ledger])
+}
+
+// Learned merchant / name → category mappings.
+model CategoryRule {
+  id          String   @id @default(cuid())
+  workspaceId String
+  ledger      String // personal | business
+  // merchant = exact normalized merchantName; name = substring match on tx name
+  matchField  String
+  matchValue  String
+  categoryId  String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  category  Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, ledger, matchField, matchValue])
+  @@index([workspaceId, ledger])
 }
 
 model Transaction {
@@ -129,6 +150,8 @@ model Transaction {
   workspaceId        String
   accountId          String
   categoryId         String?
+  // plaid | rule | user — user locks category against sync overwrites
+  categorySource     String?
   plaidTransactionId String?  @unique
   amount             Float
   date               DateTime
@@ -138,6 +161,7 @@ model Transaction {
   ledger             String   @default("personal") // personal | business
   notes              String?
   plaidCategory      String?
+  plaidDetailed      String?
   isoCurrencyCode    String?  @default("USD")
   isInvestment       Boolean  @default(false)
   investmentType     String?

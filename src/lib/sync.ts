@@ -1,21 +1,14 @@
 import type { Ledger } from "@/lib/types";
+import {
+  loadCategoryRules,
+  resolveCategory,
+  reclassifyUnlockedTransactions,
+  type CategoryRuleRow,
+} from "@/lib/categorize";
 import { prisma } from "@/lib/db";
 import { decryptToken } from "@/lib/crypto";
 import { getPlaidClient } from "@/lib/plaid";
-import { mapPlaidCategory } from "@/lib/categories";
 import { Transaction, RemovedTransaction, InvestmentTransaction } from "plaid";
-
-async function categoryIdFor(
-  workspaceId: string,
-  ledger: Ledger,
-  plaidPrimary: string | null | undefined,
-): Promise<string | undefined> {
-  const name = mapPlaidCategory(plaidPrimary, ledger);
-  const category = await prisma.category.findFirst({
-    where: { workspaceId, ledger, name },
-  });
-  return category?.id;
-}
 
 export async function syncItemTransactions(plaidItemId: string) {
   const item = await prisma.plaidItem.findUniqueOrThrow({
@@ -30,6 +23,15 @@ export async function syncItemTransactions(plaidItemId: string) {
   );
 
   const defaultLedger = item.defaultLedger as Ledger;
+  const rulesCache = new Map<string, CategoryRuleRow[]>();
+
+  async function rulesFor(ledger: Ledger) {
+    if (!rulesCache.has(ledger)) {
+      rulesCache.set(ledger, await loadCategoryRules(item.workspaceId, ledger));
+    }
+    return rulesCache.get(ledger)!;
+  }
+
   let cursor = item.cursor ?? undefined;
   let hasMore = true;
   let added = 0;
@@ -45,11 +47,23 @@ export async function syncItemTransactions(plaidItemId: string) {
     const data = response.data;
 
     for (const tx of data.added) {
-      await upsertBankTransaction(item.workspaceId, accountByPlaidId, defaultLedger, tx);
+      await upsertBankTransaction(
+        item.workspaceId,
+        accountByPlaidId,
+        defaultLedger,
+        tx,
+        rulesFor,
+      );
       added += 1;
     }
     for (const tx of data.modified) {
-      await upsertBankTransaction(item.workspaceId, accountByPlaidId, defaultLedger, tx);
+      await upsertBankTransaction(
+        item.workspaceId,
+        accountByPlaidId,
+        defaultLedger,
+        tx,
+        rulesFor,
+      );
       modified += 1;
     }
     for (const tx of data.removed) {
@@ -86,7 +100,10 @@ export async function syncItemTransactions(plaidItemId: string) {
     },
   });
 
-  return { added, modified, removed };
+  // Re-map unlocked txs with improved Plaid map + rules (helps existing "Other").
+  const reclassified = await reclassifyUnlockedTransactions(item.workspaceId);
+
+  return { added, modified, removed, reclassified };
 }
 
 async function upsertBankTransaction(
@@ -94,39 +111,71 @@ async function upsertBankTransaction(
   accountByPlaidId: Map<string, { id: string; ledger: Ledger }>,
   defaultLedger: Ledger,
   tx: Transaction,
+  rulesFor: (ledger: Ledger) => Promise<CategoryRuleRow[]>,
 ) {
   const account = accountByPlaidId.get(tx.account_id);
   if (!account) return;
 
   const ledger = account.ledger ?? defaultLedger;
   const primary = tx.personal_finance_category?.primary ?? tx.category?.[0] ?? null;
-  const categoryId = await categoryIdFor(workspaceId, ledger, primary);
+  const detailed = tx.personal_finance_category?.detailed ?? null;
+  const merchantName = tx.merchant_name ?? null;
+  const rules = await rulesFor(ledger);
+  const resolved = await resolveCategory({
+    workspaceId,
+    ledger,
+    name: tx.name,
+    merchantName,
+    plaidPrimary: primary,
+    plaidDetailed: detailed,
+    rules,
+  });
 
-  await prisma.transaction.upsert({
+  const existing = await prisma.transaction.findUnique({
     where: { plaidTransactionId: tx.transaction_id },
-    create: {
-      workspaceId,
-      accountId: account.id,
-      categoryId,
-      plaidTransactionId: tx.transaction_id,
+    select: { id: true, categoryId: true, categorySource: true },
+  });
+
+  if (!existing) {
+    await prisma.transaction.create({
+      data: {
+        workspaceId,
+        accountId: account.id,
+        categoryId: resolved.categoryId,
+        categorySource: resolved.source,
+        plaidTransactionId: tx.transaction_id,
+        amount: tx.amount,
+        date: new Date(tx.date),
+        name: tx.name,
+        merchantName,
+        pending: tx.pending,
+        ledger,
+        plaidCategory: primary,
+        plaidDetailed: detailed,
+        isoCurrencyCode: tx.iso_currency_code ?? "USD",
+        isInvestment: false,
+      },
+    });
+    return;
+  }
+
+  const locked = existing.categorySource === "user";
+  await prisma.transaction.update({
+    where: { id: existing.id },
+    data: {
       amount: tx.amount,
       date: new Date(tx.date),
       name: tx.name,
-      merchantName: tx.merchant_name ?? null,
-      pending: tx.pending,
-      ledger,
-      plaidCategory: primary,
-      isoCurrencyCode: tx.iso_currency_code ?? "USD",
-      isInvestment: false,
-    },
-    update: {
-      amount: tx.amount,
-      date: new Date(tx.date),
-      name: tx.name,
-      merchantName: tx.merchant_name ?? null,
+      merchantName,
       pending: tx.pending,
       plaidCategory: primary,
-      categoryId,
+      plaidDetailed: detailed,
+      ...(locked
+        ? {}
+        : {
+            categoryId: resolved.categoryId,
+            categorySource: resolved.source,
+          }),
     },
   });
 }
@@ -257,32 +306,58 @@ async function upsertInvestmentTransaction(
   const ledger = account.ledger ?? defaultLedger;
   // Investment tx amounts: positive = outflow (buy), negative = inflow (sell)
   const name = [tx.name, symbol].filter(Boolean).join(" · ");
-  const categoryId = await categoryIdFor(workspaceId, ledger, "TRANSFER_OUT");
+  const resolved = await resolveCategory({
+    workspaceId,
+    ledger,
+    name,
+    merchantName: symbol,
+    plaidPrimary: "TRANSFER_OUT",
+    plaidDetailed: null,
+  });
 
-  await prisma.transaction.upsert({
+  const existing = await prisma.transaction.findUnique({
     where: { plaidTransactionId: tx.investment_transaction_id },
-    create: {
-      workspaceId,
-      accountId: account.id,
-      categoryId,
-      plaidTransactionId: tx.investment_transaction_id,
+    select: { id: true, categorySource: true },
+  });
+
+  if (!existing) {
+    await prisma.transaction.create({
+      data: {
+        workspaceId,
+        accountId: account.id,
+        categoryId: resolved.categoryId,
+        categorySource: resolved.source,
+        plaidTransactionId: tx.investment_transaction_id,
+        amount: tx.amount,
+        date: new Date(tx.date),
+        name,
+        merchantName: symbol,
+        pending: false,
+        ledger,
+        plaidCategory: tx.type,
+        isoCurrencyCode: tx.iso_currency_code ?? "USD",
+        isInvestment: true,
+        investmentType: tx.subtype ?? tx.type,
+      },
+    });
+    return;
+  }
+
+  const locked = existing.categorySource === "user";
+  await prisma.transaction.update({
+    where: { id: existing.id },
+    data: {
       amount: tx.amount,
       date: new Date(tx.date),
       name,
       merchantName: symbol,
-      pending: false,
-      ledger,
-      plaidCategory: tx.type,
-      isoCurrencyCode: tx.iso_currency_code ?? "USD",
-      isInvestment: true,
       investmentType: tx.subtype ?? tx.type,
-    },
-    update: {
-      amount: tx.amount,
-      date: new Date(tx.date),
-      name,
-      merchantName: symbol,
-      investmentType: tx.subtype ?? tx.type,
+      ...(locked
+        ? {}
+        : {
+            categoryId: resolved.categoryId,
+            categorySource: resolved.source,
+          }),
     },
   });
 }

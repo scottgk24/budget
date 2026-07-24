@@ -2,10 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useLedger } from "@/components/ledger-context";
-import { Card, EmptyState, Input, PageHeader, Select } from "@/components/ui";
-import { formatDate, formatSignedCurrency, monthKey } from "@/lib/format";
+import { Button, Card, EmptyState, Input, PageHeader, Select } from "@/components/ui";
+import {
+  formatDate,
+  formatMonthLabel,
+  formatSignedCurrency,
+  monthKey,
+  recentMonthKeys,
+} from "@/lib/format";
 
 type Category = { id: string; name: string; ledger: string };
+type Account = { id: string; name: string; mask: string | null };
 type Tx = {
   id: string;
   name: string;
@@ -16,17 +23,31 @@ type Tx = {
   ledger: string;
   pending: boolean;
   categoryId: string | null;
+  categorySource: string | null;
   category: Category | null;
   account: { name: string; mask: string | null };
 };
+
+const MONTH_OPTIONS = recentMonthKeys(18);
 
 export default function TransactionsPage() {
   const { ledger } = useLedger();
   const [transactions, setTransactions] = useState<Tx[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [month, setMonth] = useState(monthKey());
+  const [accountId, setAccountId] = useState("");
+  const [categoryId, setCategoryId] = useState("");
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [rememberPrompt, setRememberPrompt] = useState<{
+    txId: string;
+    merchant: string;
+    categoryId: string;
+    categoryName: string;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -34,26 +55,45 @@ export default function TransactionsPage() {
     try {
       const params = new URLSearchParams({
         ledger,
-        month: monthKey(),
+        month,
         limit: "200",
       });
       if (q.trim()) params.set("q", q.trim());
-      const [txRes, catRes] = await Promise.all([
+      if (accountId) params.set("accountId", accountId);
+      if (categoryId) params.set("categoryId", categoryId);
+
+      const [txRes, catRes, acctRes] = await Promise.all([
         fetch(`/api/transactions?${params}`),
         fetch(`/api/categories?ledger=${ledger}`),
+        fetch(`/api/accounts?ledger=${ledger}`),
       ]);
       const txJson = await txRes.json();
       const catJson = await catRes.json();
+      const acctJson = await acctRes.json();
       if (!txRes.ok) throw new Error(txJson.error ?? "Failed to load");
       if (!catRes.ok) throw new Error(catJson.error ?? "Failed to load categories");
+      if (!acctRes.ok) throw new Error(acctJson.error ?? "Failed to load accounts");
       setTransactions(txJson.transactions);
       setCategories(catJson.categories);
+      setAccounts(
+        (acctJson.accounts as Account[]).map((a) => ({
+          id: a.id,
+          name: a.name,
+          mask: a.mask,
+        })),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
       setLoading(false);
     }
-  }, [ledger, q]);
+  }, [ledger, month, accountId, categoryId, q]);
+
+  useEffect(() => {
+    setAccountId("");
+    setCategoryId("");
+    setRememberPrompt(null);
+  }, [ledger]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 200);
@@ -69,36 +109,150 @@ export default function TransactionsPage() {
     const json = await res.json();
     if (!res.ok) {
       setError(json.error ?? "Update failed");
-      return;
+      return null;
     }
     setTransactions((prev) =>
       prev.map((t) => (t.id === id ? { ...t, ...json.transaction } : t)),
     );
+    return json as {
+      transaction: Tx;
+      ruleApplied?: { ruleId: string; applied: number } | null;
+    };
   }
+
+  async function onCategoryChange(tx: Tx, nextCategoryId: string) {
+    setNotice(null);
+    const result = await updateTx(tx.id, {
+      categoryId: nextCategoryId || null,
+    });
+    if (!result) return;
+
+    const merchant = tx.merchantName || tx.name;
+    const cat = categories.find((c) => c.id === nextCategoryId);
+    if (nextCategoryId && merchant && cat) {
+      setRememberPrompt({
+        txId: tx.id,
+        merchant,
+        categoryId: nextCategoryId,
+        categoryName: cat.name,
+      });
+    } else {
+      setRememberPrompt(null);
+    }
+  }
+
+  async function rememberMerchant() {
+    if (!rememberPrompt) return;
+    const result = await updateTx(rememberPrompt.txId, {
+      categoryId: rememberPrompt.categoryId,
+      rememberMerchant: true,
+      applyToPast: true,
+    });
+    if (!result) return;
+    const applied = result.ruleApplied?.applied ?? 0;
+    setNotice(
+      `Remembered “${rememberPrompt.merchant}” as ${rememberPrompt.categoryName}` +
+        (applied > 0 ? ` · updated ${applied} past transaction${applied === 1 ? "" : "s"}` : ""),
+    );
+    setRememberPrompt(null);
+    void load();
+  }
+
+  const filterDescription = [
+    formatMonthLabel(month),
+    ledger === "personal" ? "Personal" : "Business",
+    accountId
+      ? accounts.find((a) => a.id === accountId)?.name
+      : null,
+    categoryId === "none"
+      ? "Uncategorized"
+      : categoryId
+        ? categories.find((c) => c.id === categoryId)?.name
+        : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div>
       <PageHeader
         title="Transactions"
-        description={`This month · ${ledger === "personal" ? "Personal" : "Business"}`}
+        description={filterDescription}
         actions={
-          <Input
-            placeholder="Search…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            className="w-48"
-          />
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Select
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              aria-label="Month"
+            >
+              {MONTH_OPTIONS.map((m) => (
+                <option key={m} value={m}>
+                  {formatMonthLabel(m)}
+                </option>
+              ))}
+            </Select>
+            <Select
+              value={accountId}
+              onChange={(e) => setAccountId(e.target.value)}
+              aria-label="Account"
+            >
+              <option value="">All accounts</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                  {a.mask ? ` ···${a.mask}` : ""}
+                </option>
+              ))}
+            </Select>
+            <Select
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+              aria-label="Category"
+            >
+              <option value="">All categories</option>
+              <option value="none">Uncategorized</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+            <Input
+              placeholder="Search…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              className="w-40 sm:w-48"
+            />
+          </div>
         }
       />
 
       {error ? <p className="mb-4 text-sm text-[var(--danger)]">{error}</p> : null}
+      {notice ? <p className="mb-4 text-sm text-[var(--positive)]">{notice}</p> : null}
+
+      {rememberPrompt ? (
+        <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 py-3">
+          <p className="text-sm">
+            Always categorize <span className="font-medium">{rememberPrompt.merchant}</span> as{" "}
+            <span className="font-medium">{rememberPrompt.categoryName}</span>?
+          </p>
+          <div className="flex gap-2">
+            <Button type="button" variant="ghost" onClick={() => setRememberPrompt(null)}>
+              Not now
+            </Button>
+            <Button type="button" onClick={() => void rememberMerchant()}>
+              Remember &amp; apply to past
+            </Button>
+          </div>
+        </Card>
+      ) : null}
 
       {loading && transactions.length === 0 ? (
         <p className="text-[var(--muted)]">Loading…</p>
       ) : transactions.length === 0 ? (
         <EmptyState
-          title="No transactions yet"
-          description="Connect an account and sync to pull spending from Chase or Robinhood."
+          title="No transactions match"
+          description="Try another month, account, or category — or sync after connecting a bank."
         />
       ) : (
         <Card className="overflow-x-auto p-0">
@@ -124,16 +278,17 @@ export default function TransactionsPage() {
                     <p className="text-[var(--muted)]">
                       {tx.account.name}
                       {tx.account.mask ? ` ···${tx.account.mask}` : ""}
+                      {tx.categorySource === "user"
+                        ? " · manual"
+                        : tx.categorySource === "rule"
+                          ? " · rule"
+                          : ""}
                     </p>
                   </td>
                   <td className="px-4 py-3">
                     <Select
                       value={tx.categoryId ?? ""}
-                      onChange={(e) =>
-                        void updateTx(tx.id, {
-                          categoryId: e.target.value || null,
-                        })
-                      }
+                      onChange={(e) => void onCategoryChange(tx, e.target.value)}
                     >
                       <option value="">Uncategorized</option>
                       {categories.map((c) => (

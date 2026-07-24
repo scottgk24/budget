@@ -2,42 +2,53 @@ import { NextResponse } from "next/server";
 import {
   eachDayOfInterval,
   eachMonthOfInterval,
+  eachWeekOfInterval,
   eachYearOfInterval,
-  format,
-  parseISO,
 } from "date-fns";
 import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
+import { isIncomeAmount, isSpendAmount } from "@/lib/categories";
 import { prisma } from "@/lib/db";
 import {
   type MetricsGranularity,
+  metricsBucketKey,
   metricsRange,
+  periodBounds,
 } from "@/lib/format";
 
-type Bucket = { key: string; label: string; spend: number; income: number; savings: number };
+type Bucket = {
+  key: string;
+  label: string;
+  spend: number;
+  income: number;
+  savings: number;
+  balance: number;
+};
 
-function bucketKey(date: Date, granularity: MetricsGranularity): string {
-  if (granularity === "daily") return format(date, "yyyy-MM-dd");
-  if (granularity === "monthly") return format(date, "yyyy-MM");
-  return format(date, "yyyy");
-}
-
-function bucketLabel(key: string, granularity: MetricsGranularity): string {
-  if (granularity === "daily") return format(parseISO(key), "MMM d");
-  if (granularity === "monthly") return format(parseISO(`${key}-01`), "MMM yyyy");
-  return key;
+function parseGranularity(raw: string | null): MetricsGranularity {
+  if (raw === "daily" || raw === "weekly" || raw === "yearly") return raw;
+  return "monthly";
 }
 
 function emptyBuckets(start: Date, end: Date, granularity: MetricsGranularity): Bucket[] {
   const dates =
     granularity === "daily"
       ? eachDayOfInterval({ start, end })
-      : granularity === "monthly"
-        ? eachMonthOfInterval({ start, end })
-        : eachYearOfInterval({ start, end });
+      : granularity === "weekly"
+        ? eachWeekOfInterval({ start, end }, { weekStartsOn: 1 })
+        : granularity === "monthly"
+          ? eachMonthOfInterval({ start, end })
+          : eachYearOfInterval({ start, end });
 
   return dates.map((d) => {
-    const key = bucketKey(d, granularity);
-    return { key, label: bucketLabel(key, granularity), spend: 0, income: 0, savings: 0 };
+    const key = metricsBucketKey(d, granularity);
+    return {
+      key,
+      label: periodBounds(key, granularity).label,
+      spend: 0,
+      income: 0,
+      savings: 0,
+      balance: 0,
+    };
   });
 }
 
@@ -46,35 +57,63 @@ export async function GET(req: Request) {
     const { workspace } = await ensureUserAndWorkspace();
     const { searchParams } = new URL(req.url);
     const ledger = (searchParams.get("ledger") as "personal" | "business") || "personal";
-    const raw = searchParams.get("granularity") || "monthly";
-    const granularity: MetricsGranularity =
-      raw === "daily" || raw === "yearly" ? raw : "monthly";
+    const granularity = parseGranularity(searchParams.get("granularity"));
 
     const { start, end } = metricsRange(granularity);
 
-    const transactions = await prisma.transaction.findMany({
-      where: {
-        workspaceId: workspace.id,
-        ledger,
-        date: { gte: start, lte: end },
-        pending: false,
-      },
-      select: { date: true, amount: true },
-    });
+    const [transactions, accounts] = await Promise.all([
+      prisma.transaction.findMany({
+        where: {
+          workspaceId: workspace.id,
+          ledger,
+          date: { gte: start, lte: end },
+          pending: false,
+        },
+        select: {
+          date: true,
+          amount: true,
+          category: { select: { name: true } },
+        },
+      }),
+      prisma.account.findMany({
+        where: { workspaceId: workspace.id, ledger, isHidden: false },
+        select: { currentBalance: true },
+      }),
+    ]);
+
+    const currentBalance = accounts.reduce((sum, a) => sum + (a.currentBalance ?? 0), 0);
 
     const buckets = emptyBuckets(start, end, granularity);
     const index = new Map(buckets.map((b, i) => [b.key, i]));
 
+    // Plaid: positive amount decreases account balance. Net cashflow = -amount.
+    const netByBucket = new Map<string, number>();
+    let windowAmountSum = 0;
+
     for (const tx of transactions) {
-      const key = bucketKey(tx.date, granularity);
+      const key = metricsBucketKey(tx.date, granularity);
       const i = index.get(key);
       if (i == null) continue;
-      if (tx.amount > 0) buckets[i].spend += tx.amount;
-      else if (tx.amount < 0) buckets[i].income += Math.abs(tx.amount);
+
+      windowAmountSum += tx.amount;
+      netByBucket.set(key, (netByBucket.get(key) ?? 0) - tx.amount);
+
+      const categoryName = tx.category?.name;
+      if (isSpendAmount(tx.amount, categoryName)) buckets[i].spend += tx.amount;
+      else if (isIncomeAmount(tx.amount, categoryName)) {
+        buckets[i].income += Math.abs(tx.amount);
+      }
     }
 
     for (const b of buckets) {
       b.savings = b.income - b.spend;
+    }
+
+    // Reconstruct end-of-bucket balances from today's total + synced txs.
+    let running = currentBalance + windowAmountSum;
+    for (const b of buckets) {
+      running += netByBucket.get(b.key) ?? 0;
+      b.balance = running;
     }
 
     const totals = buckets.reduce(
@@ -95,7 +134,11 @@ export async function GET(req: Request) {
       start: start.toISOString(),
       end: end.toISOString(),
       series: buckets,
-      totals: { ...totals, savingsRate },
+      totals: {
+        ...totals,
+        savingsRate,
+        balance: currentBalance,
+      },
     });
   } catch (err) {
     if (err instanceof AuthError) {
