@@ -1,6 +1,7 @@
+import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { LedgerProvider } from "@/components/ledger-context";
-import { ensureUserAndWorkspace } from "@/lib/auth";
+import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
 
 export default async function AppLayout({
   children,
@@ -10,8 +11,11 @@ export default async function AppLayout({
   // Provision user + workspace on first authenticated visit
   try {
     await ensureUserAndWorkspace();
-  } catch {
-    // Middleware already protects routes; invite gate handled in pages/API
+  } catch (err) {
+    if (err instanceof AuthError && err.status === 403) {
+      redirect("/not-allowed");
+    }
+    throw err;
   }
 
   return (
@@ -20,3 +24,4 @@ export default async function AppLayout({
     </LedgerProvider>
   );
 }
+
