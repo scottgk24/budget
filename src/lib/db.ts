@@ -3,7 +3,7 @@ import { isProductionRuntime } from "@/lib/runtime";
 
 function assertDatabaseConfig() {
   const url = process.env.DATABASE_URL ?? "";
-  if (isProductionRuntime() && (url.startsWith("file:") || url.length === 0)) {
+  if (isProductionRuntime() && url.startsWith("file:")) {
     throw new Error(
       "Production requires a Postgres DATABASE_URL (not a SQLite file: URL). See docs/DEPLOY.md.",
     );

@@ -9,20 +9,17 @@
 
 ## Steps
 
-### 1. Switch database to Postgres for production
+### 1. Postgres (Neon)
 
-In `prisma/schema.prisma`, change:
+The schema already uses `postgresql`. Provision Neon on the Vercel project:
 
-```prisma
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
+```bash
+npx vercel integration add neon --scope scottgk24s-projects
+npx vercel env pull .env.local --yes
+npx prisma db push
 ```
 
-Keep SQLite for local `.env` if you prefer; use a separate production `DATABASE_URL`.
-
-Then generate a migration against Postgres (or run `npx prisma db push` once against Neon).
+Or create a Neon database in the Vercel dashboard and set `DATABASE_URL` for Production / Preview / Development.
 
 ### 2. Create the Vercel project
 
