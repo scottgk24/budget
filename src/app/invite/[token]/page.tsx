@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
+import { BrandMark } from "@/components/brand-mark";
 import { acceptInviteByToken, AuthError } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
@@ -18,7 +19,12 @@ function InviteMessage({
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--bg)] px-4">
       <div className="max-w-md text-center">
-        <h1 className="font-[family-name:var(--font-display)] text-2xl">{title}</h1>
+        <div className="mb-6 flex justify-center">
+          <BrandMark variant="leaf" href="/" />
+        </div>
+        <h1 className="font-display text-2xl font-medium tracking-tight">
+          {title}
+        </h1>
         <p className="mt-2 text-[var(--muted)]">{description}</p>
         <Link href={href} className="mt-6 inline-block text-[var(--accent)]">
           {linkLabel}
@@ -142,21 +148,26 @@ export default async function InvitePage({
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--bg)] px-4">
       <div className="max-w-md rounded-xl border border-[var(--border)] bg-[var(--surface)] p-8 text-center shadow-[var(--shadow)]">
-        <p className="font-[family-name:var(--font-display)] text-3xl">Budget</p>
-        <h1 className="mt-4 text-xl">You&apos;re invited</h1>
+        <div className="flex justify-center">
+          <BrandMark variant="owl" href={null} className="max-w-[120px]" />
+        </div>
+        <p className="mt-4 font-wordmark text-2xl text-[var(--gold)]">SAGE</p>
+        <h1 className="mt-4 font-display text-xl font-medium tracking-tight">
+          You&apos;re invited
+        </h1>
         <p className="mt-2 text-sm text-[var(--muted)]">
           Sign in or create an account with the email address this invite was sent to.
         </p>
         <div className="mt-8 flex justify-center gap-3">
           <Link
             href={`/sign-in?redirect_url=${redirectTo}`}
-            className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white"
+            className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--on-accent)]"
           >
             Sign in
           </Link>
           <Link
             href={`/sign-up?redirect_url=${redirectTo}`}
-            className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium"
+            className="rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium hover:border-[var(--gold)]"
           >
             Create account
           </Link>

@@ -151,7 +151,7 @@ export default function DashboardPage() {
           action={
             <Link
               href="/accounts"
-              className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white"
+              className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--on-accent)]"
             >
               Go to Accounts
             </Link>
@@ -162,25 +162,25 @@ export default function DashboardPage() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Card>
               <p className="text-sm text-[var(--muted)]">Balance</p>
-              <p className="mt-2 font-[family-name:var(--font-display)] text-2xl">
+              <p className="mt-2 font-display text-2xl">
                 {formatCurrency(data.totalBalance)}
               </p>
             </Card>
             <Card>
               <p className="text-sm text-[var(--muted)]">Spent this month</p>
-              <p className="mt-2 font-[family-name:var(--font-display)] text-2xl">
+              <p className="mt-2 font-display text-2xl">
                 {formatCurrency(data.spent)}
               </p>
             </Card>
             <Card>
               <p className="text-sm text-[var(--muted)]">Income this month</p>
-              <p className="mt-2 font-[family-name:var(--font-display)] text-2xl">
+              <p className="mt-2 font-display text-2xl">
                 {formatCurrency(data.income)}
               </p>
             </Card>
             <Card>
               <p className="text-sm text-[var(--muted)]">Budget remaining</p>
-              <p className="mt-2 font-[family-name:var(--font-display)] text-2xl">
+              <p className="mt-2 font-display text-2xl">
                 {remaining === null ? "—" : formatCurrency(remaining)}
               </p>
             </Card>
@@ -189,7 +189,7 @@ export default function DashboardPage() {
           <section className="mt-8">
             <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
               <div>
-                <h2 className="font-[family-name:var(--font-display)] text-xl">
+                <h2 className="font-display text-xl">
                   Spend & savings
                 </h2>
                 <p className="mt-0.5 text-sm text-[var(--muted)]">
@@ -228,7 +228,7 @@ export default function DashboardPage() {
             <div className="mb-4 grid gap-4 sm:grid-cols-3">
               <Card>
                 <p className="text-sm text-[var(--muted)]">Spend</p>
-                <p className="mt-2 font-[family-name:var(--font-display)] text-xl">
+                <p className="mt-2 font-display text-xl">
                   {metricsLoading && !metrics
                     ? "…"
                     : formatCurrency(metrics?.totals.spend ?? 0)}
@@ -236,7 +236,7 @@ export default function DashboardPage() {
               </Card>
               <Card>
                 <p className="text-sm text-[var(--muted)]">Income</p>
-                <p className="mt-2 font-[family-name:var(--font-display)] text-xl">
+                <p className="mt-2 font-display text-xl">
                   {metricsLoading && !metrics
                     ? "…"
                     : formatCurrency(metrics?.totals.income ?? 0)}
@@ -250,7 +250,7 @@ export default function DashboardPage() {
                     : ""}
                 </p>
                 <p
-                  className={`mt-2 font-[family-name:var(--font-display)] text-xl ${
+                  className={`mt-2 font-display text-xl ${
                     (metrics?.totals.savings ?? 0) >= 0
                       ? "text-[var(--positive)]"
                       : "text-[var(--danger)]"
@@ -265,7 +265,7 @@ export default function DashboardPage() {
 
             <div className="grid gap-6 lg:grid-cols-2">
               <Card>
-                <h3 className="mb-3 font-[family-name:var(--font-display)] text-lg">
+                <h3 className="mb-3 font-display text-lg">
                   Income vs spend
                 </h3>
                 {metricsLoading && !metrics ? (
@@ -281,7 +281,7 @@ export default function DashboardPage() {
                 )}
               </Card>
               <Card>
-                <h3 className="mb-3 font-[family-name:var(--font-display)] text-lg">
+                <h3 className="mb-3 font-display text-lg">
                   Net savings
                 </h3>
                 {metricsLoading && !metrics ? (
@@ -301,7 +301,7 @@ export default function DashboardPage() {
             <Card className="mt-6">
               <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
                 <div>
-                  <h3 className="font-[family-name:var(--font-display)] text-lg">
+                  <h3 className="font-display text-lg">
                     Account balance over time
                   </h3>
                   <p className="mt-0.5 text-sm text-[var(--muted)]">
@@ -340,7 +340,7 @@ export default function DashboardPage() {
           <div className="mt-8 grid gap-6 lg:grid-cols-2">
             <Card>
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="font-[family-name:var(--font-display)] text-lg">
+                <h2 className="font-display text-lg">
                   Top categories
                 </h2>
                 <Link href="/budgets" className="text-sm text-[var(--accent)]">
@@ -382,7 +382,7 @@ export default function DashboardPage() {
 
             <Card>
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="font-[family-name:var(--font-display)] text-lg">
+                <h2 className="font-display text-lg">
                   Recent activity
                 </h2>
                 <Link href="/transactions" className="text-sm text-[var(--accent)]">
@@ -418,7 +418,7 @@ export default function DashboardPage() {
 
           {data.holdings.length > 0 ? (
             <Card className="mt-6">
-              <h2 className="mb-4 font-[family-name:var(--font-display)] text-lg">
+              <h2 className="mb-4 font-display text-lg">
                 Holdings
               </h2>
               <ul className="divide-y divide-[var(--border)]">

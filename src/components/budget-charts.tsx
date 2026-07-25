@@ -9,20 +9,20 @@ export type CategorySlice = {
   value: number;
 };
 
-/** Earthy greens / warm neutrals aligned with the app palette (avoid purple bias). */
+/** Hunter / olive / gold family aligned with SAGE dark brand. */
 const SLICE_COLORS = [
-  "#1a5f4a",
-  "#2d7a5f",
-  "#3d8b6e",
+  "#2c5f2b",
+  "#5c6b46",
+  "#7a9a6a",
+  "#d4a857",
   "#c4a574",
-  "#a67c52",
-  "#8b6914",
-  "#5f6f67",
-  "#b42318",
-  "#1f6b4a",
+  "#8a9a6e",
+  "#4a5c40",
+  "#d4655a",
+  "#9aa396",
   "#6b8f71",
-  "#9a7b4f",
-  "#4a6b5c",
+  "#b8975c",
+  "#3d5238",
 ];
 
 function PieTooltip({

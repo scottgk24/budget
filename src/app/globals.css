@@ -1,31 +1,114 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #f3f0ea;
-  --surface: #fffcf7;
-  --fg: #1c2a24;
-  --muted: #5f6f67;
-  --border: #d9d2c5;
-  --accent: #1f6b4a;
-  --accent-soft: #dcefe5;
-  --shadow: 0 1px 2px rgb(28 42 36 / 4%);
-  --danger: #b42318;
-  --positive: #1f6b4a;
+  --bg: #1c1c1e;
+  --surface: #2a2b2e;
+  --fg: #f2efe6;
+  --muted: #9aa396;
+  --border: #3c403a;
+  --accent: #d4a857;
+  --gold: #d4a857;
+  --accent-soft: #2c3a2b;
+  --hunter: #2c5f2b;
+  --olive: #5c6b46;
+  --shadow: 0 1px 2px rgb(0 0 0 / 35%);
+  --danger: #d4655a;
+  --positive: #7a9a6a;
+  --on-accent: #1c1c1e;
 }
 
 @theme inline {
   --color-background: var(--bg);
   --color-foreground: var(--fg);
-  --font-sans: var(--font-body);
+  --font-sans: var(--font-sage-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-sage-serif), ui-serif, Georgia, "Times New Roman",
+    serif;
   --font-mono: var(--font-geist-mono);
 }
 
 body {
   background: var(--bg);
   color: var(--fg);
-  font-family: var(--font-body), Georgia, serif;
+  font-family: var(--font-sans);
+  color-scheme: dark;
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* Brand kit: geometric sans wordmark (logo “SAGE”), not the serif. */
+.font-wordmark {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+@keyframes sage-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sage-drift {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes sage-glow {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.06);
+  }
+}
+
+.sage-rise {
+  animation: sage-rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sage-rise-delay-1 {
+  animation-delay: 0.12s;
+}
+
+.sage-rise-delay-2 {
+  animation-delay: 0.24s;
+}
+
+.sage-rise-delay-3 {
+  animation-delay: 0.36s;
+}
+
+.sage-drift {
+  animation: sage-drift 7s ease-in-out infinite;
+}
+
+.sage-glow {
+  animation: sage-glow 6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sage-rise,
+  .sage-rise-delay-1,
+  .sage-rise-delay-2,
+  .sage-rise-delay-3,
+  .sage-drift,
+  .sage-glow {
+    animation: none;
+  }
 }

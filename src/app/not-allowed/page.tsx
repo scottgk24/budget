@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 import { currentUser } from "@clerk/nextjs/server";
+import { BrandMark } from "@/components/brand-mark";
 import { Card } from "@/components/ui";
 
 export default async function NotAllowedPage() {
@@ -14,26 +15,21 @@ export default async function NotAllowedPage() {
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[var(--bg)] px-4">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-40"
+        className="pointer-events-none absolute inset-0"
         style={{
           backgroundImage:
-            "radial-gradient(circle at 20% 20%, #dcefe5 0%, transparent 45%), radial-gradient(circle at 80% 10%, #e8dfd0 0%, transparent 40%), linear-gradient(180deg, #f3f0ea 0%, #e7efe9 100%)",
+            "radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--hunter) 40%, transparent) 0%, transparent 45%), radial-gradient(circle at 80% 10%, color-mix(in srgb, var(--gold) 14%, transparent) 0%, transparent 40%)",
         }}
       />
 
       <div className="relative w-full max-w-md">
         <div className="mb-6 flex items-center justify-between">
-          <Link
-            href="/"
-            className="font-[family-name:var(--font-display)] text-xl tracking-tight"
-          >
-            Budget
-          </Link>
+          <BrandMark variant="lockup" href="/" />
           <UserButton />
         </div>
 
         <Card>
-          <h1 className="font-[family-name:var(--font-display)] text-2xl tracking-tight">
+          <h1 className="font-display text-2xl font-medium tracking-tight">
             Invite only
           </h1>
           <p className="mt-3 text-[var(--muted)]">
@@ -49,7 +45,7 @@ export default async function NotAllowedPage() {
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
               href="/"
-              className="rounded-lg border border-[var(--border)] bg-[var(--bg)] px-4 py-2 text-sm font-medium text-[var(--fg)] hover:bg-[var(--surface)]"
+              className="rounded-lg border border-[var(--border)] bg-[var(--bg)] px-4 py-2 text-sm font-medium text-[var(--fg)] hover:border-[var(--gold)]"
             >
               Back home
             </Link>

@@ -31,7 +31,7 @@ export function PageHeader({
   return (
     <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
       <div>
-        <h1 className="font-[family-name:var(--font-display)] text-3xl tracking-tight">
+        <h1 className="font-display text-3xl font-medium tracking-tight">
           {title}
         </h1>
         {description ? (
@@ -52,11 +52,12 @@ export function Button({
   variant?: "primary" | "secondary" | "ghost" | "danger";
 }) {
   const styles = {
-    primary: "bg-[var(--accent)] text-white hover:opacity-90",
+    primary:
+      "bg-[var(--accent)] text-[var(--on-accent)] hover:opacity-90",
     secondary:
-      "border border-[var(--border)] bg-[var(--surface)] text-[var(--fg)] hover:bg-[var(--bg)]",
+      "border border-[var(--border)] bg-[var(--surface)] text-[var(--fg)] hover:border-[var(--gold)] hover:bg-[var(--bg)]",
     ghost: "text-[var(--muted)] hover:text-[var(--fg)] hover:bg-[var(--bg)]",
-    danger: "bg-red-600 text-white hover:bg-red-700",
+    danger: "bg-[var(--danger)] text-[var(--fg)] hover:opacity-90",
   } as const;
 
   return (
@@ -117,7 +118,7 @@ export function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface)] px-6 py-16 text-center">
-      <h3 className="font-[family-name:var(--font-display)] text-xl">{title}</h3>
+      <h3 className="font-display text-xl font-medium">{title}</h3>
       <p className="mt-2 max-w-md text-sm text-[var(--muted)]">{description}</p>
       {action ? <div className="mt-6">{action}</div> : null}
     </div>

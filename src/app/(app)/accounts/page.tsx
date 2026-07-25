@@ -173,7 +173,7 @@ export default function AccountsPage() {
           {accounts.map((acct) => (
             <Card key={acct.id} className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className="font-[family-name:var(--font-display)] text-lg">
+                <p className="font-display text-lg">
                   {acct.name}
                   {acct.mask ? ` ···${acct.mask}` : ""}
                 </p>
@@ -198,7 +198,7 @@ export default function AccountsPage() {
                 ) : null}
               </div>
               <div className="flex flex-col items-end gap-2">
-                <p className="font-[family-name:var(--font-display)] text-xl">
+                <p className="font-display text-xl">
                   {acct.currentBalance != null
                     ? formatCurrency(acct.currentBalance)
                     : "—"}
@@ -216,7 +216,7 @@ export default function AccountsPage() {
 
           {items.length > 0 ? (
             <Card>
-              <h2 className="mb-3 font-[family-name:var(--font-display)] text-lg">
+              <h2 className="mb-3 font-display text-lg">
                 Connected institutions
               </h2>
               <ul className="space-y-3">

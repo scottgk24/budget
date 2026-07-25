@@ -42,7 +42,7 @@ export async function POST(req: Request) {
 
     const response = await client.linkTokenCreate({
       user: { client_user_id: user.id },
-      client_name: "Budget",
+      client_name: "SAGE",
       products: products.length ? products : [Products.Transactions, Products.Investments],
       country_codes: countryCodes.length ? countryCodes : [CountryCode.Us],
       language: "en",

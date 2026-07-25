@@ -1,24 +1,50 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
-import { Fraunces, Source_Sans_3 } from "next/font/google";
+import { Bodoni_Moda, Outfit } from "next/font/google";
 import { isClerkConfigured } from "@/lib/env";
 import "./globals.css";
 
-const display = Fraunces({
-  variable: "--font-display",
+/** Brand kit “SAGE Serif” — high-contrast Didot/Bodoni for headlines. */
+const sageSerif = Bodoni_Moda({
+  variable: "--font-sage-serif",
   subsets: ["latin"],
-  weight: ["500", "600", "700"],
+  weight: ["400", "500", "600", "700"],
 });
 
-const body = Source_Sans_3({
-  variable: "--font-body",
+/** Brand kit “SAGE Sans” — geometric sans for UI + wordmark. */
+const sageSans = Outfit({
+  variable: "--font-sage-sans",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
-  title: "Budget",
-  description: "Family and business budgeting",
+  title: "SAGE",
+  description: "Household and business money, privately",
+};
+
+const clerkAppearance = {
+  variables: {
+    colorPrimary: "#d4a857",
+    colorBackground: "#2a2b2e",
+    colorInputBackground: "#1c1c1e",
+    colorInputText: "#f2efe6",
+    colorText: "#f2efe6",
+    colorTextSecondary: "#9aa396",
+    colorNeutral: "#9aa396",
+    colorDanger: "#d4655a",
+    borderRadius: "0.5rem",
+    fontFamily: "var(--font-sage-sans), ui-sans-serif, system-ui, sans-serif",
+  },
+  elements: {
+    card: "bg-[var(--surface)] border border-[var(--border)] shadow-none",
+    headerTitle: "text-[var(--fg)] font-[family-name:var(--font-sage-serif)]",
+    headerSubtitle: "text-[var(--muted)]",
+    socialButtonsBlockButton:
+      "border border-[var(--border)] bg-[var(--bg)] text-[var(--fg)]",
+    formButtonPrimary: "bg-[var(--accent)] text-[var(--on-accent)] hover:opacity-90",
+    footerActionLink: "text-[var(--accent)]",
+  },
 };
 
 export default function RootLayout({
@@ -29,9 +55,16 @@ export default function RootLayout({
   const clerkReady = isClerkConfigured();
 
   return (
-    <html lang="en" className={`${display.variable} ${body.variable} h-full`}>
-      <body className="min-h-full antialiased">
-        {clerkReady ? <ClerkProvider>{children}</ClerkProvider> : children}
+    <html
+      lang="en"
+      className={`${sageSerif.variable} ${sageSans.variable} h-full`}
+    >
+      <body className="min-h-full font-sans antialiased">
+        {clerkReady ? (
+          <ClerkProvider appearance={clerkAppearance}>{children}</ClerkProvider>
+        ) : (
+          children
+        )}
       </body>
     </html>
   );

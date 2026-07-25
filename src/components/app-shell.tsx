@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
+import { BrandMark } from "@/components/brand-mark";
 import { useLedger } from "@/components/ledger-context";
 import { cn } from "@/lib/format";
 
@@ -23,9 +24,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <header className="border-b border-[var(--border)] bg-[var(--surface)]">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-6">
-            <Link href="/dashboard" className="font-[family-name:var(--font-display)] text-xl tracking-tight">
-              Budget
-            </Link>
+            <BrandMark variant="lockup" href="/dashboard" />
             <nav className="hidden items-center gap-1 sm:flex">
               {NAV.map((item) => {
                 const active = pathname.startsWith(item.href);
@@ -36,7 +35,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     className={cn(
                       "rounded-md px-3 py-1.5 text-sm transition-colors",
                       active
-                        ? "bg-[var(--accent-soft)] text-[var(--accent)]"
+                        ? "bg-[var(--accent-soft)] text-[var(--gold)]"
                         : "text-[var(--muted)] hover:text-[var(--fg)]",
                     )}
                   >
@@ -55,7 +54,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 className={cn(
                   "rounded-md px-3 py-1 transition-colors",
                   ledger === "personal"
-                    ? "bg-[var(--accent)] text-white"
+                    ? "bg-[var(--accent)] text-[var(--on-accent)]"
                     : "text-[var(--muted)] hover:text-[var(--fg)]",
                 )}
               >
@@ -67,7 +66,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 className={cn(
                   "rounded-md px-3 py-1 transition-colors",
                   ledger === "business"
-                    ? "bg-[var(--accent)] text-white"
+                    ? "bg-[var(--accent)] text-[var(--on-accent)]"
                     : "text-[var(--muted)] hover:text-[var(--fg)]",
                 )}
               >
@@ -88,7 +87,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 className={cn(
                   "whitespace-nowrap rounded-md px-3 py-1 text-sm",
                   active
-                    ? "bg-[var(--accent-soft)] text-[var(--accent)]"
+                    ? "bg-[var(--accent-soft)] text-[var(--gold)]"
                     : "text-[var(--muted)]",
                 )}
               >

@@ -31,15 +31,15 @@ type ChartProps = {
 };
 
 const COLORS = {
-  spend: "#b42318",
-  income: "#1f6b4a",
-  savingsPos: "#1f6b4a",
-  savingsNeg: "#b42318",
-  balance: "#1a5f4a",
-  grid: "#d9d2c5",
-  muted: "#5f6f67",
-  surface: "#fffcf7",
-  selected: "#0f3d32",
+  spend: "#d4655a",
+  income: "#7a9a6a",
+  savingsPos: "#7a9a6a",
+  savingsNeg: "#d4655a",
+  balance: "#d4a857",
+  grid: "#3c403a",
+  muted: "#9aa396",
+  surface: "#2a2b2e",
+  selected: "#2c5f2b",
 };
 
 function ChartTooltip({

@@ -6,10 +6,12 @@ export default function SetupPage() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center px-6 py-16">
-      <p className="font-[family-name:var(--font-display)] text-4xl tracking-tight">
-        Budget
+      <p className="font-wordmark text-3xl text-[var(--gold)] sm:text-4xl">
+        SAGE
       </p>
-      <h1 className="mt-6 text-2xl">Finish local setup</h1>
+      <h1 className="mt-6 font-display text-2xl font-medium tracking-tight">
+        Finish local setup
+      </h1>
       <p className="mt-2 text-[var(--muted)]">
         The app is running, but auth keys are missing. Add Clerk keys so you can
         sign in, then optionally add Plaid for bank connections.
@@ -75,7 +77,7 @@ npm run dev`}
       <div className="mt-10 flex gap-3">
         <Link
           href="/"
-          className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-white"
+          className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--on-accent)]"
         >
           Back home
         </Link>

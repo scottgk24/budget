@@ -194,7 +194,7 @@ export function PeriodDrilldown({
             ) : null}
             <h2
               id={titleId}
-              className="font-[family-name:var(--font-display)] text-xl leading-tight"
+              className="font-display text-xl leading-tight"
             >
               {view === "transactions"
                 ? category

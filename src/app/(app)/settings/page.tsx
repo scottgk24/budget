@@ -93,7 +93,7 @@ export default function SettingsPage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
-          <h2 className="font-[family-name:var(--font-display)] text-lg">Workspace</h2>
+          <h2 className="font-display text-lg">Workspace</h2>
           <p className="mt-2 text-sm text-[var(--muted)]">Name</p>
           <p className="text-lg">{workspaceName}</p>
           <p className="mt-4 text-sm text-[var(--muted)]">Your role</p>
@@ -101,7 +101,7 @@ export default function SettingsPage() {
         </Card>
 
         <Card>
-          <h2 className="font-[family-name:var(--font-display)] text-lg">Members</h2>
+          <h2 className="font-display text-lg">Members</h2>
           <ul className="mt-4 divide-y divide-[var(--border)]">
             {members.map((m) => (
               <li key={m.id} className="flex items-center justify-between py-3 text-sm">
@@ -116,7 +116,7 @@ export default function SettingsPage() {
         </Card>
 
         <Card className="lg:col-span-2">
-          <h2 className="font-[family-name:var(--font-display)] text-lg">
+          <h2 className="font-display text-lg">
             Invite family
           </h2>
           <p className="mt-1 text-sm text-[var(--muted)]">
@@ -180,7 +180,7 @@ export default function SettingsPage() {
         </Card>
 
         <Card className="lg:col-span-2">
-          <h2 className="font-[family-name:var(--font-display)] text-lg">Security</h2>
+          <h2 className="font-display text-lg">Security</h2>
           <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-[var(--muted)]">
             <li>Bank logins happen in Plaid Link (OAuth) — we never store passwords.</li>
             <li>Plaid access tokens are encrypted at rest with TOKEN_ENCRYPTION_KEY.</li>

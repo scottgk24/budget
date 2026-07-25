@@ -203,7 +203,7 @@ function BudgetAmountInput({
             e.currentTarget.blur();
           }
         }}
-        className="w-24 py-1 text-right font-[family-name:var(--font-display)] text-xl tabular-nums"
+        className="w-24 py-1 text-right font-display text-xl tabular-nums"
       />
     </div>
   );
@@ -324,20 +324,20 @@ export default function BudgetsPage() {
           <div className="mb-6 grid gap-4 sm:grid-cols-3">
             <Card>
               <p className="text-sm text-[var(--muted)]">Total budgeted</p>
-              <p className="mt-2 font-[family-name:var(--font-display)] text-2xl tabular-nums">
+              <p className="mt-2 font-display text-2xl tabular-nums">
                 {formatCurrency(totalBudgeted)}
               </p>
             </Card>
             <Card>
               <p className="text-sm text-[var(--muted)]">Spent this month</p>
-              <p className="mt-2 font-[family-name:var(--font-display)] text-2xl tabular-nums">
+              <p className="mt-2 font-display text-2xl tabular-nums">
                 {formatCurrency(totalSpent)}
               </p>
             </Card>
             <Card>
               <p className="text-sm text-[var(--muted)]">Remaining</p>
               <p
-                className={`mt-2 font-[family-name:var(--font-display)] text-2xl tabular-nums ${
+                className={`mt-2 font-display text-2xl tabular-nums ${
                   totalBudgeted - totalSpent >= 0
                     ? "text-[var(--positive)]"
                     : "text-[var(--danger)]"
@@ -352,7 +352,7 @@ export default function BudgetsPage() {
 
           <div className="mb-6 grid gap-4 lg:grid-cols-2">
             <Card>
-              <h2 className="mb-1 font-[family-name:var(--font-display)] text-lg">
+              <h2 className="mb-1 font-display text-lg">
                 Budget mix
               </h2>
               <p className="mb-3 text-sm text-[var(--muted)]">
@@ -364,7 +364,7 @@ export default function BudgetsPage() {
               />
             </Card>
             <Card>
-              <h2 className="mb-1 font-[family-name:var(--font-display)] text-lg">
+              <h2 className="mb-1 font-display text-lg">
                 Spend mix
               </h2>
               <p className="mb-3 text-sm text-[var(--muted)]">
