@@ -4,9 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CategoryPieChart } from "@/components/budget-charts";
 import { useLedger } from "@/components/ledger-context";
 import { Card, EmptyState, Input, PageHeader } from "@/components/ui";
-import { cn, formatCurrency, monthKey } from "@/lib/format";
+import { cn, formatCurrency, monthKey, monthlyAllotment } from "@/lib/format";
 
-type Category = { id: string; name: string };
+type Category = {
+  id: string;
+  name: string;
+  budgetPeriod?: "monthly" | "annual";
+};
 type Budget = { id: string; categoryId: string; amount: number; category: Category };
 
 const SKIP = new Set(["Income", "Transfers"]);
@@ -214,8 +218,10 @@ export default function BudgetsPage() {
   const month = monthKey();
   const [categories, setCategories] = useState<Category[]>([]);
   const [spentByCategory, setSpentByCategory] = useState<Record<string, number>>({});
+  const [spentYtdByCategory, setSpentYtdByCategory] = useState<Record<string, number>>({});
   const [averageByCategory, setAverageByCategory] = useState<Record<string, number>>({});
   const [averageMonths, setAverageMonths] = useState(6);
+  const [year, setYear] = useState(month.slice(0, 4));
   const [drafts, setDrafts] = useState<Record<string, number>>({});
   const [saved, setSaved] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState<string | null>(null);
@@ -232,8 +238,10 @@ export default function BudgetsPage() {
     }
     setCategories(json.categories);
     setSpentByCategory(json.spentByCategory ?? {});
+    setSpentYtdByCategory(json.spentYtdByCategory ?? {});
     setAverageByCategory(json.averageByCategory ?? {});
     setAverageMonths(json.averageMonths ?? 6);
+    setYear(json.year ?? month.slice(0, 4));
     const next: Record<string, number> = {};
     for (const cat of json.categories as Category[]) {
       const b = (json.budgets as Budget[]).find((x) => x.categoryId === cat.id);
@@ -252,8 +260,15 @@ export default function BudgetsPage() {
     [categories],
   );
 
+  const isAnnual = (c: Category) => c.budgetPeriod === "annual";
+
+  /** Monthly picture: annual categories contribute yearly÷12. */
   const totalBudgeted = useMemo(
-    () => rows.reduce((sum, c) => sum + (drafts[c.id] ?? 0), 0),
+    () =>
+      rows.reduce((sum, c) => {
+        const amt = drafts[c.id] ?? 0;
+        return sum + (isAnnual(c) ? monthlyAllotment(amt) : amt);
+      }, 0),
     [rows, drafts],
   );
   const totalSpent = useMemo(
@@ -263,7 +278,14 @@ export default function BudgetsPage() {
   const budgetSlices = useMemo(
     () =>
       rows
-        .map((c) => ({ id: c.id, name: c.name, value: drafts[c.id] ?? 0 }))
+        .map((c) => {
+          const amt = drafts[c.id] ?? 0;
+          return {
+            id: c.id,
+            name: c.name,
+            value: isAnnual(c) ? monthlyAllotment(amt) : amt,
+          };
+        })
         .filter((s) => s.value > 0),
     [rows, drafts],
   );
@@ -304,11 +326,33 @@ export default function BudgetsPage() {
     }
   }
 
+  async function setPeriod(categoryId: string, budgetPeriod: "monthly" | "annual") {
+    setSaving(categoryId);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/budgets", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ categoryId, ledger, month, budgetPeriod }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Failed to update period");
+      setNotice(budgetPeriod === "annual" ? "Switched to yearly budget" : "Switched to monthly budget");
+      window.setTimeout(() => setNotice(null), 1500);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update period");
+    } finally {
+      setSaving(null);
+    }
+  }
+
   return (
     <div>
       <PageHeader
         title="Budgets"
-        description={`Drag or type monthly limits · avg marker = last ${averageMonths} months · ${ledger === "personal" ? "Personal" : "Business"} · ${month}`}
+        description={`Monthly limits · yearly for Travel, Insurance, Gifts · avg = last ${averageMonths} months · ${ledger === "personal" ? "Personal" : "Business"} · ${month}`}
       />
 
       {error ? <p className="mb-4 text-sm text-[var(--danger)]">{error}</p> : null}
@@ -323,9 +367,12 @@ export default function BudgetsPage() {
         <>
           <div className="mb-6 grid gap-4 sm:grid-cols-3">
             <Card>
-              <p className="text-sm text-[var(--muted)]">Total budgeted</p>
+              <p className="text-sm text-[var(--muted)]">Total budgeted (monthly)</p>
               <p className="mt-2 font-display text-2xl tabular-nums">
                 {formatCurrency(totalBudgeted)}
+              </p>
+              <p className="mt-1 text-[11px] text-[var(--muted)]">
+                Annual categories count as yearly ÷ 12
               </p>
             </Card>
             <Card>
@@ -379,25 +426,88 @@ export default function BudgetsPage() {
 
           <div className="grid gap-3">
             {rows.map((cat) => {
-              const spent = spentByCategory[cat.id] ?? 0;
-              const average = averageByCategory[cat.id] ?? 0;
+              const annual = isAnnual(cat);
+              const monthSpent = spentByCategory[cat.id] ?? 0;
+              const ytdSpent = spentYtdByCategory[cat.id] ?? 0;
+              const progressSpent = annual ? ytdSpent : monthSpent;
+              const monthlyAvg = averageByCategory[cat.id] ?? 0;
+              const average = annual ? Math.round(monthlyAvg * 12) : monthlyAvg;
               const budgetAmt = drafts[cat.id] ?? 0;
-              const max = baseSliderMax(average, spent, budgetAmt);
-              const pct = budgetAmt > 0 ? Math.min(100, (spent / budgetAmt) * 100) : 0;
-              const over = budgetAmt > 0 && spent > budgetAmt;
+              const max = baseSliderMax(average, progressSpent, budgetAmt);
+              const pct =
+                budgetAmt > 0 ? Math.min(100, (progressSpent / budgetAmt) * 100) : 0;
+              const over = budgetAmt > 0 && progressSpent > budgetAmt;
 
               return (
                 <Card key={cat.id} className="space-y-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-medium">{cat.name}</p>
-                      <p className="text-sm text-[var(--muted)]">
-                        Spent{" "}
-                        <span className={over ? "text-[var(--danger)]" : undefined}>
-                          {formatCurrency(spent)}
-                        </span>
-                        {budgetAmt > 0 ? ` of ${formatCurrency(budgetAmt)}` : " · no limit set"}
-                        {average > 0 ? ` · avg ${formatCurrency(average)}/mo` : ""}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium">{cat.name}</p>
+                        <div className="inline-flex rounded-md border border-[var(--border)] p-0.5 text-[11px]">
+                          <button
+                            type="button"
+                            disabled={saving === cat.id}
+                            className={cn(
+                              "rounded px-2 py-0.5 transition-colors",
+                              !annual
+                                ? "bg-[var(--accent)]/15 text-[var(--fg)]"
+                                : "text-[var(--muted)] hover:text-[var(--fg)]",
+                            )}
+                            onClick={() => {
+                              if (annual) void setPeriod(cat.id, "monthly");
+                            }}
+                          >
+                            Monthly
+                          </button>
+                          <button
+                            type="button"
+                            disabled={saving === cat.id}
+                            className={cn(
+                              "rounded px-2 py-0.5 transition-colors",
+                              annual
+                                ? "bg-[var(--accent)]/15 text-[var(--fg)]"
+                                : "text-[var(--muted)] hover:text-[var(--fg)]",
+                            )}
+                            onClick={() => {
+                              if (!annual) void setPeriod(cat.id, "annual");
+                            }}
+                          >
+                            Annual
+                          </button>
+                        </div>
+                      </div>
+                      <p className="mt-1 text-sm text-[var(--muted)]">
+                        {annual ? (
+                          <>
+                            YTD{" "}
+                            <span className={over ? "text-[var(--danger)]" : undefined}>
+                              {formatCurrency(ytdSpent)}
+                            </span>
+                            {budgetAmt > 0
+                              ? ` of ${formatCurrency(budgetAmt)} for ${year}`
+                              : " · no yearly limit set"}
+                            {monthSpent > 0
+                              ? ` · ${formatCurrency(monthSpent)} this month`
+                              : ""}
+                            {average > 0
+                              ? ` · avg ~${formatCurrency(average)}/yr`
+                              : ""}
+                          </>
+                        ) : (
+                          <>
+                            Spent{" "}
+                            <span className={over ? "text-[var(--danger)]" : undefined}>
+                              {formatCurrency(monthSpent)}
+                            </span>
+                            {budgetAmt > 0
+                              ? ` of ${formatCurrency(budgetAmt)}`
+                              : " · no limit set"}
+                            {average > 0
+                              ? ` · avg ${formatCurrency(average)}/mo`
+                              : ""}
+                          </>
+                        )}
                       </p>
                     </div>
                     <div className="text-right">
@@ -407,7 +517,11 @@ export default function BudgetsPage() {
                         onCommit={(next) => void save(cat.id, next)}
                       />
                       <p className="text-[11px] text-[var(--muted)]">
-                        {saving === cat.id ? "Saving…" : "Budget"}
+                        {saving === cat.id
+                          ? "Saving…"
+                          : annual
+                            ? "Yearly budget"
+                            : "Monthly budget"}
                       </p>
                     </div>
                   </div>
@@ -424,7 +538,7 @@ export default function BudgetsPage() {
                   <BudgetSlider
                     value={budgetAmt}
                     average={average}
-                    spent={spent}
+                    spent={progressSpent}
                     baseMax={max}
                     disabled={saving === cat.id}
                     onChange={(next) => setDrafts((d) => ({ ...d, [cat.id]: next }))}
@@ -438,8 +552,9 @@ export default function BudgetsPage() {
       )}
 
       <p className="mt-6 text-xs text-[var(--muted)]">
-        Drag the slider or type an amount. Sliding to the end expands the range. The top label marks
-        average monthly spend; the thin red tick is this month&apos;s spend so far.
+        Drag the slider or type an amount. Annual categories track year-to-date spend against a
+        yearly limit and count as yearly ÷ 12 in the monthly totals. The thin red tick is progress
+        so far (this month, or YTD for annual).
       </p>
     </div>
   );

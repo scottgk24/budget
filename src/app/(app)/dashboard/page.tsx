@@ -36,6 +36,7 @@ type DashboardData = {
     name: string;
     spent: number;
     budget: number | null;
+    budgetPeriod?: "monthly" | "annual";
   }>;
   holdings: Array<{
     id: string;
@@ -352,6 +353,7 @@ export default function DashboardPage() {
               ) : (
                 <ul className="space-y-3">
                   {data.categorySpend.map((row) => {
+                    const annual = row.budgetPeriod === "annual";
                     const pct =
                       row.budget && row.budget > 0
                         ? Math.min(100, (row.spent / row.budget) * 100)
@@ -359,10 +361,20 @@ export default function DashboardPage() {
                     return (
                       <li key={row.name}>
                         <div className="flex items-center justify-between text-sm">
-                          <span>{row.name}</span>
+                          <span>
+                            {row.name}
+                            {annual ? (
+                              <span className="ml-1.5 text-[11px] text-[var(--muted)]">
+                                YTD
+                              </span>
+                            ) : null}
+                          </span>
                           <span className="text-[var(--muted)]">
                             {formatCurrency(row.spent)}
                             {row.budget != null ? ` / ${formatCurrency(row.budget)}` : ""}
+                            {annual && row.budget != null ? (
+                              <span className="text-[11px]"> /yr</span>
+                            ) : null}
                           </span>
                         </div>
                         {pct != null ? (

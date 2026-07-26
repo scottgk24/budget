@@ -110,13 +110,15 @@ model Account {
 }
 
 model Category {
-  id          String   @id @default(cuid())
-  workspaceId String
-  name        String
-  ledger      String // personal | business
-  icon        String?
-  isDefault   Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  id           String   @id @default(cuid())
+  workspaceId  String
+  name         String
+  ledger       String // personal | business
+  icon         String?
+  isDefault    Boolean  @default(false)
+  // monthly | annual — annual categories use Budget.month = yyyy
+  budgetPeriod String   @default("monthly")
+  createdAt    DateTime @default(now())
 
   workspace    Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   transactions Transaction[]

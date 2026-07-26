@@ -70,6 +70,26 @@ export function monthKey(date: Date = new Date()): string {
   return format(date, "yyyy-MM");
 }
 
+/** Calendar year key, e.g. "2026". */
+export function yearKey(date: Date = new Date()): string {
+  return format(date, "yyyy");
+}
+
+/** Year from a month key (`yyyy-MM`) or year key (`yyyy`). */
+export function yearFromPeriod(period: string): string {
+  return period.slice(0, 4);
+}
+
+export function yearRange(year: string): { start: Date; end: Date } {
+  const start = startOfYear(parseISO(`${year}-01-01`));
+  return { start, end: endOfYear(start) };
+}
+
+/** Monthly allotment for an annual budget amount. */
+export function monthlyAllotment(annualAmount: number): number {
+  return Math.round((annualAmount / 12) * 100) / 100;
+}
+
 /** Recent month keys newest-first, e.g. for filter dropdowns. */
 export function recentMonthKeys(count = 12, now: Date = new Date()): string[] {
   return Array.from({ length: count }, (_, i) => monthKey(subMonths(now, i)));

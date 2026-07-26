@@ -1,7 +1,12 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
-import { defaultCategoriesForLedger } from "@/lib/categories";
+import {
+  DEFAULT_ANNUAL_CATEGORIES,
+  defaultBudgetPeriodForName,
+  defaultCategoriesForLedger,
+} from "@/lib/categories";
 import { reclassifyUnlockedTransactions } from "@/lib/categorize";
+import { monthKey, yearKey } from "@/lib/format";
 import { isProductionRuntime } from "@/lib/runtime";
 
 export class AuthError extends Error {
@@ -241,25 +246,87 @@ export async function seedDefaultCategories(workspaceId: string): Promise<number
       name,
       ledger: "personal" as const,
       isDefault: true,
+      budgetPeriod: defaultBudgetPeriodForName(name),
     })),
     ...defaultCategoriesForLedger("business").map((name) => ({
       workspaceId,
       name,
       ledger: "business" as const,
       isDefault: true,
+      budgetPeriod: defaultBudgetPeriodForName(name),
     })),
   ];
 
   const existing = await prisma.category.findMany({
     where: { workspaceId },
-    select: { name: true, ledger: true },
+    select: { id: true, name: true, ledger: true, budgetPeriod: true },
   });
   const have = new Set(existing.map((c) => `${c.ledger}:${c.name}`));
   const missing = desired.filter((c) => !have.has(`${c.ledger}:${c.name}`));
-  if (missing.length === 0) return 0;
 
-  const result = await prisma.category.createMany({ data: missing });
-  return result.count;
+  let created = 0;
+  if (missing.length > 0) {
+    const result = await prisma.category.createMany({ data: missing });
+    created = result.count;
+  }
+
+  // Align lumpy defaults to annual even if they already existed as monthly.
+  const toAnnual = existing.filter(
+    (c) =>
+      (DEFAULT_ANNUAL_CATEGORIES as readonly string[]).includes(c.name) &&
+      c.budgetPeriod === "monthly",
+  );
+  if (toAnnual.length > 0) {
+    await prisma.category.updateMany({
+      where: { id: { in: toAnnual.map((c) => c.id) } },
+      data: { budgetPeriod: "annual" },
+    });
+  }
+
+  // Promote current-month budgets → yearly for annual categories (migration may
+  // have flipped period without moving amounts).
+  const annualCats = await prisma.category.findMany({
+    where: { workspaceId, budgetPeriod: "annual" },
+    select: { id: true, ledger: true },
+  });
+  const year = yearKey();
+  const month = monthKey();
+  for (const cat of annualCats) {
+    const yearly = await prisma.budget.findUnique({
+      where: {
+        workspaceId_categoryId_month_ledger: {
+          workspaceId,
+          categoryId: cat.id,
+          month: year,
+          ledger: cat.ledger,
+        },
+      },
+    });
+    if (yearly) continue;
+    const monthly = await prisma.budget.findUnique({
+      where: {
+        workspaceId_categoryId_month_ledger: {
+          workspaceId,
+          categoryId: cat.id,
+          month,
+          ledger: cat.ledger,
+        },
+      },
+    });
+    if (monthly && monthly.amount > 0) {
+      await prisma.budget.create({
+        data: {
+          workspaceId,
+          categoryId: cat.id,
+          month: year,
+          ledger: cat.ledger,
+          amount: Math.round(monthly.amount * 12),
+        },
+      });
+    }
+  }
+
+  return created;
 }
 
 export function requireOwner(role: string) {

@@ -2,9 +2,14 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { startOfMonth, subMonths } from "date-fns";
 import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
-import { excludeNonSpendCategory } from "@/lib/categories";
+import { excludeNonSpendCategory, isAnnualBudgetPeriod } from "@/lib/categories";
 import { prisma } from "@/lib/db";
-import { monthKey, monthRange } from "@/lib/format";
+import {
+  monthKey,
+  monthRange,
+  yearFromPeriod,
+  yearRange,
+} from "@/lib/format";
 
 const AVG_MONTHS = 6;
 
@@ -14,51 +19,98 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const ledger = (searchParams.get("ledger") as "personal" | "business") || "personal";
     const month = searchParams.get("month") || monthKey();
+    const year = yearFromPeriod(month);
 
     const categories = await prisma.category.findMany({
       where: { workspaceId: workspace.id, ledger },
       orderBy: { name: "asc" },
     });
 
-    const budgets = await prisma.budget.findMany({
-      where: { workspaceId: workspace.id, ledger, month },
-      include: { category: true },
-    });
+    const annualIds = categories
+      .filter((c) => isAnnualBudgetPeriod(c.budgetPeriod))
+      .map((c) => c.id);
+    const monthlyIds = categories
+      .filter((c) => !isAnnualBudgetPeriod(c.budgetPeriod))
+      .map((c) => c.id);
+
+    const [monthlyBudgets, annualBudgets] = await Promise.all([
+      monthlyIds.length
+        ? prisma.budget.findMany({
+            where: {
+              workspaceId: workspace.id,
+              ledger,
+              month,
+              categoryId: { in: monthlyIds },
+            },
+            include: { category: true },
+          })
+        : Promise.resolve([]),
+      annualIds.length
+        ? prisma.budget.findMany({
+            where: {
+              workspaceId: workspace.id,
+              ledger,
+              month: year,
+              categoryId: { in: annualIds },
+            },
+            include: { category: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const budgets = [...monthlyBudgets, ...annualBudgets];
 
     const { start, end } = monthRange(month);
-    const spent = await prisma.transaction.groupBy({
-      by: ["categoryId"],
-      where: {
-        workspaceId: workspace.id,
-        ledger,
-        date: { gte: start, lte: end },
-        amount: { gt: 0 },
-        pending: false,
-        ...excludeNonSpendCategory,
-      },
-      _sum: { amount: true },
-    });
+    const { start: yearStart, end: yearEnd } = yearRange(year);
+
+    const [spent, spentYtd, historical] = await Promise.all([
+      prisma.transaction.groupBy({
+        by: ["categoryId"],
+        where: {
+          workspaceId: workspace.id,
+          ledger,
+          date: { gte: start, lte: end },
+          amount: { gt: 0 },
+          pending: false,
+          ...excludeNonSpendCategory,
+        },
+        _sum: { amount: true },
+      }),
+      prisma.transaction.groupBy({
+        by: ["categoryId"],
+        where: {
+          workspaceId: workspace.id,
+          ledger,
+          date: { gte: yearStart, lte: yearEnd },
+          amount: { gt: 0 },
+          pending: false,
+          ...excludeNonSpendCategory,
+        },
+        _sum: { amount: true },
+      }),
+      prisma.transaction.groupBy({
+        by: ["categoryId"],
+        where: {
+          workspaceId: workspace.id,
+          ledger,
+          date: {
+            gte: startOfMonth(subMonths(startOfMonth(start), AVG_MONTHS - 1)),
+            lte: end,
+          },
+          amount: { gt: 0 },
+          pending: false,
+          ...excludeNonSpendCategory,
+        },
+        _sum: { amount: true },
+      }),
+    ]);
 
     const spentByCategory = Object.fromEntries(
       spent.map((s) => [s.categoryId ?? "uncategorized", s._sum.amount ?? 0]),
     );
-
-    // Average monthly spend over the last N months (including current).
-    const avgEnd = end;
-    const avgStart = startOfMonth(subMonths(startOfMonth(start), AVG_MONTHS - 1));
-    const historical = await prisma.transaction.groupBy({
-      by: ["categoryId"],
-      where: {
-        workspaceId: workspace.id,
-        ledger,
-        date: { gte: avgStart, lte: avgEnd },
-        amount: { gt: 0 },
-        pending: false,
-        ...excludeNonSpendCategory,
-      },
-      _sum: { amount: true },
-    });
-
+    const spentYtdByCategory = Object.fromEntries(
+      spentYtd.map((s) => [s.categoryId ?? "uncategorized", s._sum.amount ?? 0]),
+    );
     const averageByCategory = Object.fromEntries(
       historical.map((s) => [
         s.categoryId ?? "uncategorized",
@@ -70,9 +122,11 @@ export async function GET(req: Request) {
       categories,
       budgets,
       spentByCategory,
+      spentYtdByCategory,
       averageByCategory,
       averageMonths: AVG_MONTHS,
       month,
+      year,
     });
   } catch (err) {
     if (err instanceof AuthError) {
@@ -101,19 +155,23 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: "Category not found" }, { status: 404 });
     }
 
+    const periodKey = isAnnualBudgetPeriod(category.budgetPeriod)
+      ? yearFromPeriod(body.month)
+      : body.month;
+
     const budget = await prisma.budget.upsert({
       where: {
         workspaceId_categoryId_month_ledger: {
           workspaceId: workspace.id,
           categoryId: body.categoryId,
-          month: body.month,
+          month: periodKey,
           ledger: body.ledger,
         },
       },
       create: {
         workspaceId: workspace.id,
         categoryId: body.categoryId,
-        month: body.month,
+        month: periodKey,
         ledger: body.ledger,
         amount: body.amount,
       },
@@ -127,5 +185,112 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: err.message }, { status: err.status });
     }
     return NextResponse.json({ error: "Failed to save budget" }, { status: 500 });
+  }
+}
+
+const periodSchema = z.object({
+  categoryId: z.string(),
+  ledger: z.enum(["personal", "business"]),
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+  budgetPeriod: z.enum(["monthly", "annual"]),
+});
+
+/** Flip monthly/annual and seed the other period's amount when missing. */
+export async function PATCH(req: Request) {
+  try {
+    const { workspace } = await ensureUserAndWorkspace();
+    const body = periodSchema.parse(await req.json());
+    const year = yearFromPeriod(body.month);
+
+    const category = await prisma.category.findFirst({
+      where: { id: body.categoryId, workspaceId: workspace.id, ledger: body.ledger },
+    });
+    if (!category) {
+      return NextResponse.json({ error: "Category not found" }, { status: 404 });
+    }
+
+    const fromAnnual = isAnnualBudgetPeriod(category.budgetPeriod);
+    const toAnnual = body.budgetPeriod === "annual";
+    if (fromAnnual === toAnnual) {
+      return NextResponse.json({ category });
+    }
+
+    const updated = await prisma.category.update({
+      where: { id: category.id },
+      data: { budgetPeriod: body.budgetPeriod },
+    });
+
+    if (toAnnual) {
+      const monthly = await prisma.budget.findUnique({
+        where: {
+          workspaceId_categoryId_month_ledger: {
+            workspaceId: workspace.id,
+            categoryId: category.id,
+            month: body.month,
+            ledger: body.ledger,
+          },
+        },
+      });
+      const existingYear = await prisma.budget.findUnique({
+        where: {
+          workspaceId_categoryId_month_ledger: {
+            workspaceId: workspace.id,
+            categoryId: category.id,
+            month: year,
+            ledger: body.ledger,
+          },
+        },
+      });
+      if (!existingYear && monthly && monthly.amount > 0) {
+        await prisma.budget.create({
+          data: {
+            workspaceId: workspace.id,
+            categoryId: category.id,
+            month: year,
+            ledger: body.ledger,
+            amount: Math.round(monthly.amount * 12),
+          },
+        });
+      }
+    } else {
+      const yearly = await prisma.budget.findUnique({
+        where: {
+          workspaceId_categoryId_month_ledger: {
+            workspaceId: workspace.id,
+            categoryId: category.id,
+            month: year,
+            ledger: body.ledger,
+          },
+        },
+      });
+      const existingMonth = await prisma.budget.findUnique({
+        where: {
+          workspaceId_categoryId_month_ledger: {
+            workspaceId: workspace.id,
+            categoryId: category.id,
+            month: body.month,
+            ledger: body.ledger,
+          },
+        },
+      });
+      if (!existingMonth && yearly && yearly.amount > 0) {
+        await prisma.budget.create({
+          data: {
+            workspaceId: workspace.id,
+            categoryId: category.id,
+            month: body.month,
+            ledger: body.ledger,
+            amount: Math.round(yearly.amount / 12),
+          },
+        });
+      }
+    }
+
+    return NextResponse.json({ category: updated });
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    return NextResponse.json({ error: "Failed to update budget period" }, { status: 500 });
   }
 }

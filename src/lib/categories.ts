@@ -51,12 +51,28 @@ export const PERSONAL_CATEGORIES = [
   "Pets",
   "Entertainment",
   "Shopping",
+  "Gifts",
   "Subscriptions",
   "Travel",
   "Income",
   "Transfers",
   "Other",
 ] as const;
+
+/** Categories that default to a yearly budget (lumpy spend). */
+export const DEFAULT_ANNUAL_CATEGORIES = ["Travel", "Insurance", "Gifts"] as const;
+
+export type BudgetPeriod = "monthly" | "annual";
+
+export function isAnnualBudgetPeriod(period: string | null | undefined): boolean {
+  return period === "annual";
+}
+
+export function defaultBudgetPeriodForName(name: string): BudgetPeriod {
+  return (DEFAULT_ANNUAL_CATEGORIES as readonly string[]).includes(name)
+    ? "annual"
+    : "monthly";
+}
 
 export const BUSINESS_CATEGORIES = [
   "Supplies",
@@ -137,6 +153,7 @@ function businessRemap(name: string, ledger: Ledger): string {
   if (name === "Groceries") return "Supplies";
   if (name === "Healthcare") return "Insurance";
   if (name === "Transport") return "Travel";
+  if (name === "Gifts") return "Other";
   return name;
 }
 
@@ -233,7 +250,7 @@ const DETAILED_MAP: Record<string, string> = {
   GENERAL_SERVICES_OTHER_SUBSCRIPTION: "Subscriptions",
 
   // Gov / fees
-  GOVERNMENT_AND_NON_PROFIT_DONATIONS: "Other",
+  GOVERNMENT_AND_NON_PROFIT_DONATIONS: "Gifts",
   GOVERNMENT_AND_NON_PROFIT_GOVERNMENT_DEPARTMENTS_AND_AGENCIES: "Other",
   GOVERNMENT_AND_NON_PROFIT_TAX_PAYMENT: "Other",
   GOVERNMENT_AND_NON_PROFIT_OTHER_GOVERNMENT_AND_NON_PROFIT: "Other",

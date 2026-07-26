@@ -1,8 +1,19 @@
 import { NextResponse } from "next/server";
 import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
-import { excludeNonSpendCategory, excludeTransfersCategory, NON_SPEND_CATEGORIES } from "@/lib/categories";
+import {
+  excludeNonSpendCategory,
+  excludeTransfersCategory,
+  isAnnualBudgetPeriod,
+  NON_SPEND_CATEGORIES,
+} from "@/lib/categories";
 import { prisma } from "@/lib/db";
-import { monthKey, monthRange } from "@/lib/format";
+import {
+  monthKey,
+  monthRange,
+  monthlyAllotment,
+  yearFromPeriod,
+  yearRange,
+} from "@/lib/format";
 
 export async function GET(req: Request) {
   try {
@@ -10,7 +21,9 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const ledger = (searchParams.get("ledger") as "personal" | "business") || "personal";
     const month = searchParams.get("month") || monthKey();
+    const year = yearFromPeriod(month);
     const { start, end } = monthRange(month);
+    const { start: yearStart, end: yearEnd } = yearRange(year);
 
     const accounts = await prisma.account.findMany({
       where: { workspaceId: workspace.id, ledger, isHidden: false },
@@ -37,68 +50,123 @@ export async function GET(req: Request) {
       pending: false,
     };
 
-    const spendAgg = await prisma.transaction.aggregate({
-      where: {
-        ...baseMonth,
-        amount: { gt: 0 },
-        ...excludeNonSpendCategory,
-      },
-      _sum: { amount: true },
-    });
-    const incomeAgg = await prisma.transaction.aggregate({
-      where: {
-        ...baseMonth,
-        amount: { lt: 0 },
-        ...excludeTransfersCategory,
-      },
-      _sum: { amount: true },
-    });
+    const [spendAgg, incomeAgg, categories, monthlyBudgets, annualBudgets, byCategory, byCategoryYtd, holdings] =
+      await Promise.all([
+        prisma.transaction.aggregate({
+          where: {
+            ...baseMonth,
+            amount: { gt: 0 },
+            ...excludeNonSpendCategory,
+          },
+          _sum: { amount: true },
+        }),
+        prisma.transaction.aggregate({
+          where: {
+            ...baseMonth,
+            amount: { lt: 0 },
+            ...excludeTransfersCategory,
+          },
+          _sum: { amount: true },
+        }),
+        prisma.category.findMany({
+          where: { workspaceId: workspace.id, ledger },
+        }),
+        prisma.budget.findMany({
+          where: { workspaceId: workspace.id, ledger, month },
+          include: { category: true },
+        }),
+        prisma.budget.findMany({
+          where: { workspaceId: workspace.id, ledger, month: year },
+          include: { category: true },
+        }),
+        prisma.transaction.groupBy({
+          by: ["categoryId"],
+          where: {
+            ...baseMonth,
+            amount: { gt: 0 },
+            ...excludeNonSpendCategory,
+          },
+          _sum: { amount: true },
+        }),
+        prisma.transaction.groupBy({
+          by: ["categoryId"],
+          where: {
+            workspaceId: workspace.id,
+            ledger,
+            date: { gte: yearStart, lte: yearEnd },
+            amount: { gt: 0 },
+            pending: false,
+            ...excludeNonSpendCategory,
+          },
+          _sum: { amount: true },
+        }),
+        prisma.holding.findMany({
+          where: {
+            workspaceId: workspace.id,
+            account: { ledger },
+          },
+          include: { account: { select: { name: true } } },
+          orderBy: { value: "desc" },
+          take: 8,
+        }),
+      ]);
 
-    const budgets = await prisma.budget.findMany({
-      where: { workspaceId: workspace.id, ledger, month },
-      include: { category: true },
-    });
-    const budgetTotal = budgets.reduce((sum, b) => sum + b.amount, 0);
-
-    const byCategory = await prisma.transaction.groupBy({
-      by: ["categoryId"],
-      where: {
-        ...baseMonth,
-        amount: { gt: 0 },
-        ...excludeNonSpendCategory,
-      },
-      _sum: { amount: true },
-    });
-
-    const categories = await prisma.category.findMany({
-      where: { workspaceId: workspace.id, ledger },
-    });
-    const catMap = Object.fromEntries(categories.map((c) => [c.id, c.name]));
+    const catMap = Object.fromEntries(categories.map((c) => [c.id, c]));
     const nonSpend = new Set<string>(NON_SPEND_CATEGORIES);
+    const annualIdSet = new Set(
+      categories.filter((c) => isAnnualBudgetPeriod(c.budgetPeriod)).map((c) => c.id),
+    );
+
+    const monthlyBudgetByCat = Object.fromEntries(
+      monthlyBudgets
+        .filter((b) => !annualIdSet.has(b.categoryId))
+        .map((b) => [b.categoryId, b.amount]),
+    );
+    const annualBudgetByCat = Object.fromEntries(
+      annualBudgets
+        .filter((b) => annualIdSet.has(b.categoryId))
+        .map((b) => [b.categoryId, b.amount]),
+    );
+
+    let budgetTotal = 0;
+    for (const amount of Object.values(monthlyBudgetByCat)) {
+      budgetTotal += amount;
+    }
+    for (const amount of Object.values(annualBudgetByCat)) {
+      budgetTotal += monthlyAllotment(amount);
+    }
+
+    const spentYtdByCat = Object.fromEntries(
+      byCategoryYtd.map((row) => [row.categoryId ?? "uncategorized", row._sum.amount ?? 0]),
+    );
 
     const categorySpend = byCategory
-      .map((row) => ({
-        categoryId: row.categoryId,
-        name: row.categoryId ? catMap[row.categoryId] ?? "Uncategorized" : "Uncategorized",
-        spent: row._sum.amount ?? 0,
-        budget: budgets.find((b) => b.categoryId === row.categoryId)?.amount ?? null,
-      }))
+      .map((row) => {
+        const cat = row.categoryId ? catMap[row.categoryId] : null;
+        const name = cat?.name ?? (row.categoryId ? "Uncategorized" : "Uncategorized");
+        const annual = row.categoryId ? annualIdSet.has(row.categoryId) : false;
+        const spent = annual
+          ? (spentYtdByCat[row.categoryId ?? "uncategorized"] ?? 0)
+          : (row._sum.amount ?? 0);
+        const budget = annual
+          ? (row.categoryId ? (annualBudgetByCat[row.categoryId] ?? null) : null)
+          : (row.categoryId ? (monthlyBudgetByCat[row.categoryId] ?? null) : null);
+        return {
+          categoryId: row.categoryId,
+          name,
+          spent,
+          budget,
+          budgetPeriod: annual ? ("annual" as const) : ("monthly" as const),
+          monthSpent: row._sum.amount ?? 0,
+        };
+      })
       .filter((row) => !nonSpend.has(row.name))
-      .sort((a, b) => b.spent - a.spent)
+      .sort((a, b) => b.monthSpent - a.monthSpent)
       .slice(0, 6);
-
-    const holdings = await prisma.holding.findMany({
-      where: {
-        workspaceId: workspace.id,
-        account: { ledger },
-      },
-      include: { account: { select: { name: true } } },
-      orderBy: { value: "desc" },
-      take: 8,
-    });
 
     return NextResponse.json({
       month,
+      year,
       ledger,
       totalBalance,
       accountCount: accounts.length,
