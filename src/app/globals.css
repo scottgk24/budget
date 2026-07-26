@@ -2,8 +2,8 @@
 
 :root {
   /* Clear forest theme — visibly green, not charcoal */
-  --bg: #0f1f14;
-  --surface: #1a3324;
+  --bg: #122618;
+  --surface: #1c3828;
   --fg: #eef5ea;
   --muted: #8fb396;
   --border: #2f5a3c;
@@ -16,7 +16,7 @@
   --shadow: 0 1px 2px rgb(6 20 10 / 50%);
   --danger: #d4655a;
   --positive: #7ec07a;
-  --on-accent: #0f1f14;
+  --on-accent: #122618;
 }
 
 @theme inline {
@@ -28,23 +28,34 @@
   --font-mono: var(--font-geist-mono);
 }
 
-body {
+html {
   background-color: var(--bg);
+}
+
+body {
+  min-height: 100vh;
+  background-color: transparent;
   background-image:
     radial-gradient(
-      ellipse 100% 70% at 15% 0%,
-      color-mix(in srgb, var(--hunter) 55%, transparent),
-      transparent 58%
+      ellipse 110% 75% at 12% -5%,
+      color-mix(in srgb, var(--hunter) 70%, transparent),
+      transparent 60%
     ),
     radial-gradient(
       ellipse 80% 55% at 95% 15%,
-      color-mix(in srgb, var(--gold) 14%, transparent),
+      color-mix(in srgb, var(--gold) 16%, transparent),
       transparent 50%
     ),
     radial-gradient(
-      ellipse 90% 60% at 80% 100%,
-      color-mix(in srgb, var(--olive) 40%, transparent),
+      ellipse 95% 65% at 85% 105%,
+      color-mix(in srgb, var(--olive) 48%, transparent),
       transparent 55%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--moss) 22%, var(--bg)),
+      var(--bg) 45%,
+      color-mix(in srgb, var(--hunter) 18%, var(--bg))
     );
   background-attachment: fixed;
   color: var(--fg);

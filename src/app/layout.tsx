@@ -33,8 +33,8 @@ export const metadata: Metadata = {
 const clerkAppearance = {
   variables: {
     colorPrimary: "#d4a857",
-    colorBackground: "#1a3324",
-    colorInputBackground: "#0f1f14",
+    colorBackground: "#1c3828",
+    colorInputBackground: "#122618",
     colorInputText: "#eef5ea",
     colorText: "#eef5ea",
     colorTextSecondary: "#8fb396",

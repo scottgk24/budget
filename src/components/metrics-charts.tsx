@@ -38,7 +38,7 @@ const COLORS = {
   balance: "#d4a857",
   grid: "#2f5a3c",
   muted: "#8fb396",
-  surface: "#1a3324",
+  surface: "#1c3828",
   selected: "#2c5f2b",
 };
 

@@ -20,7 +20,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { ledger, setLedger } = useLedger();
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--fg)]">
+    <div className="min-h-screen text-[var(--fg)]">
       <header className="border-b border-[var(--border)] bg-[var(--surface)]">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-6">

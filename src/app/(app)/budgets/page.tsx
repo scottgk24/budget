@@ -3,8 +3,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CategoryPieChart } from "@/components/budget-charts";
 import { useLedger } from "@/components/ledger-context";
-import { Card, EmptyState, Input, PageHeader } from "@/components/ui";
-import { cn, formatCurrency, monthKey, monthlyAllotment } from "@/lib/format";
+import { Card, EmptyState, PageHeader } from "@/components/ui";
+import {
+  cn,
+  formatCompactCurrency,
+  formatCurrency,
+  monthKey,
+  monthlyAllotment,
+} from "@/lib/format";
 
 type Category = {
   id: string;
@@ -15,38 +21,88 @@ type Budget = { id: string; categoryId: string; amount: number; category: Catego
 
 const SKIP = new Set(["Income", "Transfers"]);
 
-function niceMax(n: number): number {
-  const target = Math.max(n, 100);
-  if (target <= 100) return 100;
-  if (target <= 250) return 250;
-  if (target <= 500) return 500;
-  if (target <= 1000) return 1000;
-  if (target <= 2500) return 2500;
-  if (target <= 5000) return 5000;
-  if (target <= 10_000) return 10_000;
-  if (target <= 25_000) return 25_000;
-  const step = target > 50_000 ? 5000 : 1000;
-  return Math.ceil(target / step) * step;
-}
+/** Fixed slider ceilings — expand one step at a time when releasing at the right edge. */
+const SLIDER_TIERS = [500, 1000, 3000, 5000] as const;
 
 function sliderStep(max: number): number {
-  if (max <= 250) return 5;
+  if (max <= 500) return 5;
   if (max <= 1000) return 10;
-  if (max <= 5000) return 25;
-  if (max <= 10_000) return 50;
-  return 100;
+  return 25;
 }
 
-/** Generous ceiling so high-limit categories (housing, etc.) aren't stuck low. */
-function baseSliderMax(average: number, spent: number, budgetAmt: number): number {
-  return niceMax(
-    Math.max(
-      average * 5,
-      spent * 2,
-      budgetAmt,
-      budgetAmt > 0 ? budgetAmt * 1.25 : 0,
-      2000,
-    ),
+/** Smallest tier that can hold `value` (capped at the top tier). */
+function tierForValue(value: number): number {
+  for (const tier of SLIDER_TIERS) {
+    if (value <= tier) return tier;
+  }
+  return SLIDER_TIERS[SLIDER_TIERS.length - 1];
+}
+
+function tierIndex(max: number): number {
+  const idx = SLIDER_TIERS.indexOf(max as (typeof SLIDER_TIERS)[number]);
+  return idx >= 0 ? idx : SLIDER_TIERS.indexOf(tierForValue(max) as (typeof SLIDER_TIERS)[number]);
+}
+
+/** Next higher ceiling, or the same if already at the top. */
+function expandOneTier(max: number): number {
+  const idx = tierIndex(max);
+  if (idx < 0 || idx >= SLIDER_TIERS.length - 1) return SLIDER_TIERS[SLIDER_TIERS.length - 1];
+  return SLIDER_TIERS[idx + 1];
+}
+
+/**
+ * Shrink when value drops under the next-lower tier's ceiling
+ * (e.g. max 3000 → under 1000 → max 1000). Never expands.
+ */
+function contractSliderMax(value: number, prevMax: number): number {
+  const clamped = Math.max(0, value);
+  const needed = tierForValue(clamped);
+  let idx = tierIndex(prevMax);
+  if (idx < 0) return needed;
+
+  while (idx > 0 && clamped < SLIDER_TIERS[idx - 1]) {
+    idx -= 1;
+  }
+
+  return Math.max(SLIDER_TIERS[idx], needed);
+}
+
+function ProgressTrack({
+  label,
+  spent,
+  limit,
+}: {
+  label: string;
+  spent: number;
+  limit: number;
+}) {
+  const pct = limit > 0 ? Math.min(100, (spent / limit) * 100) : 0;
+  const over = limit > 0 && spent > limit;
+
+  return (
+    <div className="min-w-0 flex-1">
+      <div className="mb-1 flex items-baseline justify-between gap-2 text-xs">
+        <span className="font-medium text-[var(--muted)]">{label}</span>
+        <span
+          className={cn(
+            "tabular-nums",
+            over ? "text-[var(--danger)]" : "text-[var(--fg)]",
+          )}
+        >
+          {formatCurrency(spent)}
+          <span className="text-[var(--muted)]"> / {formatCurrency(limit)}</span>
+        </span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-[var(--bg)]">
+        <div
+          className={cn(
+            "h-full rounded-full transition-[width] duration-200",
+            over ? "bg-[var(--danger)]" : "bg-[var(--accent)]",
+          )}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -54,7 +110,6 @@ function BudgetSlider({
   value,
   average,
   spent,
-  baseMax,
   onChange,
   onCommit,
   disabled,
@@ -62,75 +117,96 @@ function BudgetSlider({
   value: number;
   average: number;
   spent: number;
-  baseMax: number;
   onChange: (next: number) => void;
   onCommit: (next: number) => void;
   disabled?: boolean;
 }) {
-  const [max, setMax] = useState(() => Math.max(baseMax, value, 2000));
+  const [max, setMax] = useState(() => tierForValue(value));
   const step = sliderStep(max);
+  const atCeiling = value >= max;
+  const canExpand = tierIndex(max) < SLIDER_TIERS.length - 1;
+  const displayValue = Math.min(value, max);
+  const valuePct = max > 0 ? Math.min(100, (displayValue / max) * 100) : 0;
   const avgPct = max > 0 ? Math.min(100, (average / max) * 100) : 0;
   const spentPct = max > 0 ? Math.min(100, (spent / max) * 100) : 0;
 
+  // Typed amounts: fit the ceiling to the value. Never expand mid-drag via this path.
   useEffect(() => {
-    setMax((prev) => Math.max(prev, baseMax, value));
-  }, [baseMax, value]);
-
-  function expandIfNeeded(next: number) {
-    // At the end of the track → grow so the user can keep increasing.
-    if (next >= max - step) {
-      setMax((prev) => niceMax(Math.max(prev * 1.5, next + step * 10)));
-    }
-  }
+    setMax((prev) => Math.max(contractSliderMax(value, prev), tierForValue(value)));
+  }, [value]);
 
   function handleChange(next: number) {
-    onChange(next);
-    expandIfNeeded(next);
+    // Stay within the current tier while dragging so the pointer can't cascade
+    // through every ceiling in one stroke.
+    const clamped = Math.min(next, max);
+    onChange(clamped);
+    setMax((prev) => contractSliderMax(clamped, prev));
   }
 
   function handleCommit(el: HTMLInputElement) {
-    onCommit(Number(el.value));
+    const next = Math.min(Number(el.value), max);
+    onCommit(next);
+    // Expand one tier only on release at the right edge — not while dragging.
+    if (next >= max && canExpand) {
+      setMax(expandOneTier(max));
+      return;
+    }
+    setMax(contractSliderMax(next, max));
   }
 
   return (
-    <div className="w-full">
-      <div className="relative px-0.5 pt-5 pb-1">
-        {average > 0 ? (
+    <div className="w-full max-w-xl">
+      <div className="relative">
+        <div className="relative h-6">
+          {average > 0 && average <= max && Math.abs(avgPct - valuePct) > 10 ? (
+            <div
+              className="pointer-events-none absolute bottom-0 z-10 -translate-x-1/2"
+              style={{ left: `${avgPct}%` }}
+            >
+              <div className="flex flex-col items-center">
+                <span className="whitespace-nowrap rounded bg-[var(--fg)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--surface)]">
+                  avg {formatCompactCurrency(average)}
+                </span>
+                <span className="mt-0.5 h-1.5 w-px bg-[var(--fg)]" />
+              </div>
+            </div>
+          ) : null}
+
           <div
-            className="pointer-events-none absolute top-0 z-10 -translate-x-1/2"
-            style={{ left: `${avgPct}%` }}
+            className="pointer-events-none absolute bottom-0 z-20 -translate-x-1/2"
+            style={{ left: `${valuePct}%` }}
           >
             <div className="flex flex-col items-center">
-              <span className="whitespace-nowrap rounded bg-[var(--fg)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--surface)]">
-                avg {formatCurrency(average)}
+              <span className="whitespace-nowrap rounded-md bg-[var(--accent)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--on-accent)] shadow-sm">
+                {formatCompactCurrency(displayValue)}
               </span>
-              <span className="mt-0.5 h-2 w-px bg-[var(--fg)]" />
+              <span className="mt-0.5 h-1.5 w-px bg-[var(--accent)]" />
             </div>
           </div>
-        ) : null}
+        </div>
 
-        <div className="relative h-2 rounded-full bg-[var(--bg)]">
-          {spent > 0 ? (
+        <div className="relative h-2.5 rounded-full bg-[var(--bg)] ring-1 ring-[var(--border)]/60">
+          {spent > 0 && spent <= max ? (
             <div
-              className="pointer-events-none absolute top-1/2 z-[1] h-3 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--danger)]/70"
+              className="pointer-events-none absolute top-1/2 z-[1] h-3.5 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--danger)]"
               style={{ left: `${spentPct}%` }}
               title={`Spent ${formatCurrency(spent)}`}
             />
           ) : null}
           <div
-            className="absolute inset-y-0 left-0 rounded-full bg-[var(--accent)]/35"
-            style={{ width: `${Math.min(100, (value / max) * 100)}%` }}
+            className="absolute inset-y-0 left-0 rounded-full bg-[var(--accent)]/45"
+            style={{ width: `${valuePct}%` }}
           />
           <input
             type="range"
             min={0}
             max={max}
             step={step}
-            value={Math.min(value, max)}
+            value={displayValue}
             disabled={disabled}
             aria-label="Budget amount"
             className={cn(
-              "absolute inset-0 z-[2] h-2 w-full cursor-pointer appearance-none bg-transparent",
+              "absolute inset-0 z-[2] h-2.5 w-full cursor-pointer appearance-none bg-transparent",
               "[&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none",
               "[&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2",
               "[&::-webkit-slider-thumb]:border-[var(--accent)] [&::-webkit-slider-thumb]:bg-[var(--surface)]",
@@ -159,9 +235,16 @@ function BudgetSlider({
           />
         </div>
       </div>
-      <div className="mt-1 flex justify-between text-[11px] text-[var(--muted)]">
-        <span>$0</span>
-        <span>{formatCurrency(max)}</span>
+      <div className="mt-1.5 flex items-center justify-between text-xs tabular-nums">
+        <span className="font-medium text-[var(--fg)]">$0</span>
+        <span className="text-[11px] text-[var(--muted)]">
+          {atCeiling && canExpand
+            ? `release to unlock ${formatCompactCurrency(expandOneTier(max))}`
+            : average > 0 && average <= max && Math.abs(avgPct - valuePct) <= 10
+              ? `avg ${formatCompactCurrency(average)}`
+              : `max ${formatCompactCurrency(max)}`}
+        </span>
+        <span className="font-medium text-[var(--fg)]">{formatCompactCurrency(max)}</span>
       </div>
     </div>
   );
@@ -191,10 +274,18 @@ function BudgetAmountInput({
     onCommit(Math.max(0, Math.round(parsed)));
   }
 
+  const digits = Math.max(text.length, 3);
+
   return (
-    <div className="flex items-center justify-end gap-1">
-      <span className="text-sm text-[var(--muted)]">$</span>
-      <Input
+    <div
+      className={cn(
+        "inline-flex items-center rounded-md border border-[var(--border)] bg-[var(--bg)]",
+        "focus-within:border-[var(--accent)]",
+        disabled && "opacity-50",
+      )}
+    >
+      <span className="select-none pl-2 pr-0.5 text-xs font-medium text-[var(--muted)]">$</span>
+      <input
         type="text"
         inputMode="decimal"
         disabled={disabled}
@@ -207,7 +298,9 @@ function BudgetAmountInput({
             e.currentTarget.blur();
           }
         }}
-        className="w-24 py-1 text-right font-display text-xl tabular-nums"
+        // border-box width includes padding, so add room for pr/pl + glyph breathing room
+        style={{ width: `${digits + 2}ch` }}
+        className="bg-transparent py-1 pr-2.5 pl-0.5 text-right font-display text-base tabular-nums outline-none"
       />
     </div>
   );
@@ -433,13 +526,11 @@ export default function BudgetsPage() {
               const monthlyAvg = averageByCategory[cat.id] ?? 0;
               const average = annual ? Math.round(monthlyAvg * 12) : monthlyAvg;
               const budgetAmt = drafts[cat.id] ?? 0;
-              const max = baseSliderMax(average, progressSpent, budgetAmt);
-              const pct =
-                budgetAmt > 0 ? Math.min(100, (progressSpent / budgetAmt) * 100) : 0;
-              const over = budgetAmt > 0 && progressSpent > budgetAmt;
+              const monthLimit = annual ? monthlyAllotment(budgetAmt) : budgetAmt;
+              const yearLimit = annual ? budgetAmt : budgetAmt * 12;
 
               return (
-                <Card key={cat.id} className="space-y-3">
+                <Card key={cat.id} className="space-y-3.5 p-4 sm:p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -478,36 +569,10 @@ export default function BudgetsPage() {
                         </div>
                       </div>
                       <p className="mt-1 text-sm text-[var(--muted)]">
-                        {annual ? (
-                          <>
-                            YTD{" "}
-                            <span className={over ? "text-[var(--danger)]" : undefined}>
-                              {formatCurrency(ytdSpent)}
-                            </span>
-                            {budgetAmt > 0
-                              ? ` of ${formatCurrency(budgetAmt)} for ${year}`
-                              : " · no yearly limit set"}
-                            {monthSpent > 0
-                              ? ` · ${formatCurrency(monthSpent)} this month`
-                              : ""}
-                            {average > 0
-                              ? ` · avg ~${formatCurrency(average)}/yr`
-                              : ""}
-                          </>
-                        ) : (
-                          <>
-                            Spent{" "}
-                            <span className={over ? "text-[var(--danger)]" : undefined}>
-                              {formatCurrency(monthSpent)}
-                            </span>
-                            {budgetAmt > 0
-                              ? ` of ${formatCurrency(budgetAmt)}`
-                              : " · no limit set"}
-                            {average > 0
-                              ? ` · avg ${formatCurrency(average)}/mo`
-                              : ""}
-                          </>
-                        )}
+                        {average > 0
+                          ? `Avg ${formatCurrency(average)}${annual ? "/yr" : "/mo"}`
+                          : "No recent spending average"}
+                        {saving === cat.id ? " · Saving…" : ""}
                       </p>
                     </div>
                     <div className="text-right">
@@ -516,21 +581,23 @@ export default function BudgetsPage() {
                         disabled={saving === cat.id}
                         onCommit={(next) => void save(cat.id, next)}
                       />
-                      <p className="text-[11px] text-[var(--muted)]">
-                        {saving === cat.id
-                          ? "Saving…"
-                          : annual
-                            ? "Yearly budget"
-                            : "Monthly budget"}
+                      <p className="mt-1 text-[11px] text-[var(--muted)]">
+                        {annual ? "Yearly budget" : "Monthly budget"}
                       </p>
                     </div>
                   </div>
 
                   {budgetAmt > 0 ? (
-                    <div className="h-1.5 overflow-hidden rounded-full bg-[var(--bg)]">
-                      <div
-                        className={`h-full rounded-full ${over ? "bg-[var(--danger)]" : "bg-[var(--accent)]"}`}
-                        style={{ width: `${pct}%` }}
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <ProgressTrack
+                        label="This month"
+                        spent={monthSpent}
+                        limit={monthLimit}
+                      />
+                      <ProgressTrack
+                        label={`Year ${year}`}
+                        spent={ytdSpent}
+                        limit={yearLimit}
                       />
                     </div>
                   ) : null}
@@ -539,7 +606,6 @@ export default function BudgetsPage() {
                     value={budgetAmt}
                     average={average}
                     spent={progressSpent}
-                    baseMax={max}
                     disabled={saving === cat.id}
                     onChange={(next) => setDrafts((d) => ({ ...d, [cat.id]: next }))}
                     onCommit={(next) => void save(cat.id, next)}
@@ -552,9 +618,9 @@ export default function BudgetsPage() {
       )}
 
       <p className="mt-6 text-xs text-[var(--muted)]">
-        Drag the slider or type an amount. Annual categories track year-to-date spend against a
-        yearly limit and count as yearly ÷ 12 in the monthly totals. The thin red tick is progress
-        so far (this month, or YTD for annual).
+        Drag the slider or type an amount. Each category shows this month versus its monthly
+        limit, plus year-to-date versus the annualized budget (monthly × 12, or the yearly
+        limit for annual categories). The red tick marks spend so far on the slider.
       </p>
     </div>
   );
