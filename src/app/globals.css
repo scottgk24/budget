@@ -17,6 +17,8 @@
   --danger: #d4655a;
   --positive: #7ec07a;
   --on-accent: #122618;
+  --sidebar-expanded: 15rem;
+  --sidebar-collapsed: 4.25rem;
 }
 
 @theme inline {
