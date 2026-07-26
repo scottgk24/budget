@@ -9,20 +9,20 @@ export type CategorySlice = {
   value: number;
 };
 
-/** Hunter / olive / gold family aligned with SAGE dark brand. */
+/** Hunter / olive / gold family aligned with SAGE forest theme. */
 const SLICE_COLORS = [
   "#2c5f2b",
   "#5c6b46",
   "#7a9a6a",
   "#d4a857",
-  "#c4a574",
-  "#8a9a6e",
-  "#4a5c40",
-  "#d4655a",
-  "#9aa396",
+  "#3d5c40",
+  "#8fa38c",
   "#6b8f71",
+  "#d4655a",
+  "#4a6b4e",
   "#b8975c",
-  "#3d5238",
+  "#243528",
+  "#9bb892",
 ];
 
 function PieTooltip({

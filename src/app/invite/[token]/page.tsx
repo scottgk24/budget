@@ -20,7 +20,7 @@ function InviteMessage({
     <div className="flex min-h-screen items-center justify-center bg-[var(--bg)] px-4">
       <div className="max-w-md text-center">
         <div className="mb-6 flex justify-center">
-          <BrandMark variant="leaf" href="/" />
+          <BrandMark variant="mark" href="/" className="h-16 w-auto" />
         </div>
         <h1 className="font-display text-2xl font-medium tracking-tight">
           {title}
@@ -149,10 +149,9 @@ export default async function InvitePage({
     <div className="flex min-h-screen items-center justify-center bg-[var(--bg)] px-4">
       <div className="max-w-md rounded-xl border border-[var(--border)] bg-[var(--surface)] p-8 text-center shadow-[var(--shadow)]">
         <div className="flex justify-center">
-          <BrandMark variant="owl" href={null} className="max-w-[120px]" />
+          <BrandMark variant="hero" href={null} className="max-w-[140px]" />
         </div>
-        <p className="mt-4 font-wordmark text-2xl text-[var(--gold)]">SAGE</p>
-        <h1 className="mt-4 font-display text-xl font-medium tracking-tight">
+        <h1 className="mt-6 font-display text-xl font-medium tracking-tight">
           You&apos;re invited
         </h1>
         <p className="mt-2 text-sm text-[var(--muted)]">

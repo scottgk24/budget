@@ -24,7 +24,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <header className="border-b border-[var(--border)] bg-[var(--surface)]">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-6">
-            <BrandMark variant="lockup" href="/dashboard" />
+            <BrandMark variant="mark" href="/dashboard" />
             <nav className="hidden items-center gap-1 sm:flex">
               {NAV.map((item) => {
                 const active = pathname.startsWith(item.href);

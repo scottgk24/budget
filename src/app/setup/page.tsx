@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BrandMark } from "@/components/brand-mark";
 import { isClerkConfigured } from "@/lib/env";
 
 export default function SetupPage() {
@@ -6,10 +7,8 @@ export default function SetupPage() {
 
   return (
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center px-6 py-16">
-      <p className="font-wordmark text-3xl text-[var(--gold)] sm:text-4xl">
-        SAGE
-      </p>
-      <h1 className="mt-6 font-display text-2xl font-medium tracking-tight">
+      <BrandMark variant="hero" href={null} className="max-w-[140px]" />
+      <h1 className="mt-8 font-display text-2xl font-medium tracking-tight">
         Finish local setup
       </h1>
       <p className="mt-2 text-[var(--muted)]">

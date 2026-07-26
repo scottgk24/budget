@@ -21,17 +21,24 @@ const sageSans = Outfit({
 export const metadata: Metadata = {
   title: "SAGE",
   description: "Household and business money, privately",
+  icons: {
+    icon: [
+      { url: "/brand/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/brand/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/brand/apple-touch-icon.png", sizes: "180x180" }],
+  },
 };
 
 const clerkAppearance = {
   variables: {
     colorPrimary: "#d4a857",
-    colorBackground: "#2a2b2e",
-    colorInputBackground: "#1c1c1e",
-    colorInputText: "#f2efe6",
-    colorText: "#f2efe6",
-    colorTextSecondary: "#9aa396",
-    colorNeutral: "#9aa396",
+    colorBackground: "#1a3324",
+    colorInputBackground: "#0f1f14",
+    colorInputText: "#eef5ea",
+    colorText: "#eef5ea",
+    colorTextSecondary: "#8fb396",
+    colorNeutral: "#8fb396",
     colorDanger: "#d4655a",
     borderRadius: "0.5rem",
     fontFamily: "var(--font-sage-sans), ui-sans-serif, system-ui, sans-serif",

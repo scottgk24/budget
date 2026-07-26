@@ -5,6 +5,7 @@ import { isClerkConfigured } from "@/lib/env";
 
 const isPublicRoute = createRouteMatcher([
   "/",
+  "/brand(.*)",
   "/sign-in(.*)",
   "/sign-up(.*)",
   "/api/plaid/webhook(.*)",
@@ -24,6 +25,7 @@ export default function middleware(req: NextRequest, event: Parameters<typeof cl
     const allowed =
       path === "/" ||
       path === "/setup" ||
+      path.startsWith("/brand") ||
       path.startsWith("/_next") ||
       path.startsWith("/favicon");
     if (!allowed) {

@@ -30,7 +30,7 @@ export default async function HomePage() {
             "radial-gradient(ellipse 70% 55% at 12% 18%, color-mix(in srgb, var(--hunter) 42%, transparent), transparent 62%)",
             "radial-gradient(ellipse 55% 45% at 92% 12%, color-mix(in srgb, var(--gold) 16%, transparent), transparent 55%)",
             "radial-gradient(ellipse 60% 50% at 78% 88%, color-mix(in srgb, var(--olive) 28%, transparent), transparent 58%)",
-            "linear-gradient(180deg, transparent 55%, color-mix(in srgb, var(--bg) 88%, black) 100%)",
+            "linear-gradient(180deg, transparent 55%, color-mix(in srgb, var(--bg) 90%, var(--hunter)) 100%)",
           ].join(", "),
         }}
       />
@@ -44,7 +44,7 @@ export default async function HomePage() {
       />
 
       <header className="relative z-10 mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
-        <BrandMark variant="lockup" href="/" />
+        <BrandMark variant="mark" href="/" />
         <div className="flex items-center gap-2">
           <Show when="signed-out">
             <SignInButton mode="modal">
@@ -120,7 +120,7 @@ export default async function HomePage() {
           />
           <div className="sage-rise sage-rise-delay-1 sage-drift relative w-full max-w-[260px] sm:max-w-[360px] lg:max-w-[440px]">
             <BrandMark
-              variant="owl"
+              variant="hero"
               href={null}
               priority
               className="mx-auto max-w-none drop-shadow-[0_28px_56px_rgb(0_0_0_/_50%)]"

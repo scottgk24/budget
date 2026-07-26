@@ -24,7 +24,7 @@ export default async function NotAllowedPage() {
 
       <div className="relative w-full max-w-md">
         <div className="mb-6 flex items-center justify-between">
-          <BrandMark variant="lockup" href="/" />
+          <BrandMark variant="mark" href="/" />
           <UserButton />
         </div>
 

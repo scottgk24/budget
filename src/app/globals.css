@@ -1,20 +1,22 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #1c1c1e;
-  --surface: #2a2b2e;
-  --fg: #f2efe6;
-  --muted: #9aa396;
-  --border: #3c403a;
+  /* Clear forest theme — visibly green, not charcoal */
+  --bg: #0f1f14;
+  --surface: #1a3324;
+  --fg: #eef5ea;
+  --muted: #8fb396;
+  --border: #2f5a3c;
   --accent: #d4a857;
   --gold: #d4a857;
-  --accent-soft: #2c3a2b;
+  --accent-soft: #244a32;
   --hunter: #2c5f2b;
   --olive: #5c6b46;
-  --shadow: 0 1px 2px rgb(0 0 0 / 35%);
+  --moss: #3d6b45;
+  --shadow: 0 1px 2px rgb(6 20 10 / 50%);
   --danger: #d4655a;
-  --positive: #7a9a6a;
-  --on-accent: #1c1c1e;
+  --positive: #7ec07a;
+  --on-accent: #0f1f14;
 }
 
 @theme inline {
@@ -27,7 +29,24 @@
 }
 
 body {
-  background: var(--bg);
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(
+      ellipse 100% 70% at 15% 0%,
+      color-mix(in srgb, var(--hunter) 55%, transparent),
+      transparent 58%
+    ),
+    radial-gradient(
+      ellipse 80% 55% at 95% 15%,
+      color-mix(in srgb, var(--gold) 14%, transparent),
+      transparent 50%
+    ),
+    radial-gradient(
+      ellipse 90% 60% at 80% 100%,
+      color-mix(in srgb, var(--olive) 40%, transparent),
+      transparent 55%
+    );
+  background-attachment: fixed;
   color: var(--fg);
   font-family: var(--font-sans);
   color-scheme: dark;

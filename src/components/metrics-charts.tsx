@@ -32,13 +32,13 @@ type ChartProps = {
 
 const COLORS = {
   spend: "#d4655a",
-  income: "#7a9a6a",
-  savingsPos: "#7a9a6a",
+  income: "#7ec07a",
+  savingsPos: "#7ec07a",
   savingsNeg: "#d4655a",
   balance: "#d4a857",
-  grid: "#3c403a",
-  muted: "#9aa396",
-  surface: "#2a2b2e",
+  grid: "#2f5a3c",
+  muted: "#8fb396",
+  surface: "#1a3324",
   selected: "#2c5f2b",
 };
 
