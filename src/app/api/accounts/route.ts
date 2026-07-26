@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { AuthError, ensureUserAndWorkspace, requireOwner } from "@/lib/auth";
+import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
 import { handleApiError } from "@/lib/api-response";
 import { prisma } from "@/lib/db";
 import { decryptToken } from "@/lib/crypto";
@@ -106,8 +106,7 @@ const deleteSchema = z.object({
 
 export async function DELETE(req: Request) {
   try {
-    const { workspace, membership } = await ensureUserAndWorkspace();
-    requireOwner(membership.role);
+    const { workspace } = await ensureUserAndWorkspace();
 
     const body = deleteSchema.parse(await req.json());
 

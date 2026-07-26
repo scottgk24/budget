@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { ensureUserAndWorkspace, requireOwner } from "@/lib/auth";
+import { ensureUserAndWorkspace } from "@/lib/auth";
 import { handleApiError, rateLimitedResponse } from "@/lib/api-response";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import {
@@ -30,8 +30,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const { user, workspace, membership } = await ensureUserAndWorkspace();
-    requireOwner(membership.role);
+    const { user, workspace } = await ensureUserAndWorkspace();
     const json = await req.json().catch(() => ({}));
     bodySchema.parse(json);
 

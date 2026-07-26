@@ -186,7 +186,7 @@ export default function SettingsPage() {
             <li>Plaid access tokens are encrypted at rest with TOKEN_ENCRYPTION_KEY.</li>
             <li>Webhooks are verified with Plaid JWT signatures.</li>
             <li>This app is read-only: no transfers or bill pay.</li>
-            <li>Only owners can link or disconnect banks; members can sync and view.</li>
+            <li>Any family member can link or disconnect banks; owners manage invites.</li>
             <li>
               Production: set ALLOWED_EMAILS, Clerk invite-only, Postgres, and a unique
               TOKEN_ENCRYPTION_KEY.

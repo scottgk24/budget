@@ -39,7 +39,7 @@ Open [http://localhost:3000](http://localhost:3000).
 - Read-only: no ACH, transfers, or bill pay products.
 - Invite-only: family invites from Settings + `ALLOWED_EMAILS` (required in production; empty allowlist is open only in local/dev).
 - Webhooks at `/api/plaid/webhook` require **Plaid JWT verification**; optional `PLAID_WEBHOOK_SECRET` for proxy defense-in-depth.
-- Only workspace owners can link or disconnect banks; disconnect fails closed if Plaid `item/remove` fails.
+- Any workspace member can link or disconnect banks; disconnect fails closed if Plaid `item/remove` fails.
 - Security headers (frame deny, nosniff, referrer policy) are set in `next.config.ts`.
 
 ## Personal vs Business

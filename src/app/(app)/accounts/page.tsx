@@ -39,16 +39,12 @@ export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [plaidConfigured, setPlaidConfigured] = useState(true);
-  const [isOwner, setIsOwner] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
-    const [accountsRes, workspaceRes] = await Promise.all([
-      fetch(`/api/accounts?ledger=${ledger}`),
-      fetch("/api/workspace"),
-    ]);
+    const accountsRes = await fetch(`/api/accounts?ledger=${ledger}`);
     const json = await accountsRes.json();
     if (!accountsRes.ok) {
       setError(json.error ?? "Failed to load");
@@ -57,11 +53,6 @@ export default function AccountsPage() {
     setAccounts(json.accounts);
     setItems(json.items);
     setPlaidConfigured(json.plaidConfigured);
-
-    if (workspaceRes.ok) {
-      const ws = await workspaceRes.json();
-      setIsOwner(ws.role === "owner");
-    }
   }, [ledger]);
 
   useEffect(() => {
@@ -139,7 +130,7 @@ export default function AccountsPage() {
         title="Accounts"
         description="Securely connect Chase and Robinhood via Plaid. Credentials never touch our servers."
         actions={
-          plaidConfigured && isOwner ? (
+          plaidConfigured ? (
             <PlaidLinkButton ledger={ledger} onSuccess={() => void load()} />
           ) : null
         }
@@ -163,7 +154,7 @@ export default function AccountsPage() {
           title="No linked accounts"
           description="Connect Chase checking/credit or Robinhood brokerage. New connections are tagged with the current Personal/Business view."
           action={
-            plaidConfigured && isOwner ? (
+            plaidConfigured ? (
               <PlaidLinkButton ledger={ledger} onSuccess={() => void load()} />
             ) : undefined
           }
@@ -245,15 +236,13 @@ export default function AccountsPage() {
                       >
                         {syncing === item.id ? "Syncing…" : "Sync"}
                       </Button>
-                      {isOwner ? (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={() => void disconnect(item.id)}
-                        >
-                          Disconnect
-                        </Button>
-                      ) : null}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => void disconnect(item.id)}
+                      >
+                        Disconnect
+                      </Button>
                     </div>
                   </li>
                 ))}

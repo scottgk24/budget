@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { ensureUserAndWorkspace, requireOwner } from "@/lib/auth";
+import { ensureUserAndWorkspace } from "@/lib/auth";
 import { handleApiError, rateLimitedResponse } from "@/lib/api-response";
 import { encryptToken } from "@/lib/crypto";
 import { prisma } from "@/lib/db";
@@ -40,8 +40,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Plaid is not configured" }, { status: 503 });
     }
 
-    const { workspace, membership } = await ensureUserAndWorkspace();
-    requireOwner(membership.role);
+    const { workspace } = await ensureUserAndWorkspace();
     const body = bodySchema.parse(await req.json());
     const client = getPlaidClient();
 
