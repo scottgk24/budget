@@ -7,6 +7,7 @@ import {
   NON_SPEND_CATEGORIES,
 } from "@/lib/categories";
 import { prisma } from "@/lib/db";
+import { sumNetBalances } from "@/lib/accounts";
 import {
   monthKey,
   monthRange,
@@ -29,7 +30,7 @@ export async function GET(req: Request) {
       where: { workspaceId: workspace.id, ledger, isHidden: false },
     });
 
-    const totalBalance = accounts.reduce((sum, a) => sum + (a.currentBalance ?? 0), 0);
+    const totalBalance = sumNetBalances(accounts);
 
     const monthTx = await prisma.transaction.findMany({
       where: {

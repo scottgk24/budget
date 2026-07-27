@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useLedger } from "@/components/ledger-context";
-import { BalanceChart, SavingsChart, SpendIncomeChart, type MetricsPoint } from "@/components/metrics-charts";
+import type { MetricsPoint } from "@/components/metrics-charts";
 import { PeriodDrilldown } from "@/components/period-drilldown";
 import { Button, Card, EmptyState, PageHeader, Select } from "@/components/ui";
 import {
@@ -16,6 +17,26 @@ import {
   type MetricsRangeId,
   parseMetricsRangeId,
 } from "@/lib/format";
+
+const chartFallback = (
+  <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
+    Loading charts…
+  </p>
+);
+
+const SpendIncomeChart = dynamic(
+  () =>
+    import("@/components/metrics-charts").then((m) => m.SpendIncomeChart),
+  { ssr: false, loading: () => chartFallback },
+);
+const SavingsChart = dynamic(
+  () => import("@/components/metrics-charts").then((m) => m.SavingsChart),
+  { ssr: false, loading: () => chartFallback },
+);
+const BalanceChart = dynamic(
+  () => import("@/components/metrics-charts").then((m) => m.BalanceChart),
+  { ssr: false, loading: () => chartFallback },
+);
 
 type DashboardData = {
   month: string;

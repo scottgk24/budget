@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CategoryPieChart } from "@/components/budget-charts";
+import dynamic from "next/dynamic";
 import { useLedger } from "@/components/ledger-context";
 import { Card, EmptyState, PageHeader } from "@/components/ui";
 import {
@@ -11,6 +11,18 @@ import {
   monthlyAllotment,
 } from "@/lib/format";
 import { getDate, getDayOfYear, getDaysInMonth, getDaysInYear } from "date-fns";
+
+const CategoryPieChart = dynamic(
+  () => import("@/components/budget-charts").then((m) => m.CategoryPieChart),
+  {
+    ssr: false,
+    loading: () => (
+      <p className="flex h-56 items-center justify-center text-sm text-[var(--muted)]">
+        Loading chart…
+      </p>
+    ),
+  },
+);
 
 type Category = {
   id: string;

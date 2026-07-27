@@ -6,6 +6,7 @@ import {
   eachYearOfInterval,
 } from "date-fns";
 import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
+import { sumNetBalances } from "@/lib/accounts";
 import { isIncomeAmount, isSpendAmount } from "@/lib/categories";
 import { prisma } from "@/lib/db";
 import {
@@ -89,11 +90,11 @@ export async function GET(req: Request) {
       }),
       prisma.account.findMany({
         where: { workspaceId: workspace.id, ledger, isHidden: false },
-        select: { currentBalance: true },
+        select: { type: true, currentBalance: true },
       }),
     ]);
 
-    const currentBalance = accounts.reduce((sum, a) => sum + (a.currentBalance ?? 0), 0);
+    const currentBalance = sumNetBalances(accounts);
 
     const buckets = emptyBuckets(start, end, granularity);
     const index = new Map(buckets.map((b, i) => [b.key, i]));

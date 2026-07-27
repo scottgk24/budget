@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import {
@@ -5,7 +6,6 @@ import {
   defaultBudgetPeriodForName,
   defaultCategoriesForLedger,
 } from "@/lib/categories";
-import { reclassifyUnlockedTransactions } from "@/lib/categorize";
 import { monthKey, yearKey } from "@/lib/format";
 import { isProductionRuntime } from "@/lib/runtime";
 
@@ -155,16 +155,13 @@ export async function ensureUserAndWorkspace(options?: { inviteToken?: string })
   }
 
   // Existing members always pass (allowlist/invite only gate new joiners).
+  // Do not seed/migrate categories on this hot path — that belongs on
+  // workspace create (or a one-off backfill), not every page/API request.
   let membership = await prisma.membership.findFirst({
     where: { userId: user.id },
     include: { workspace: true },
   });
   if (membership) {
-    // Backfill any newly added default categories (idempotent).
-    const added = await seedDefaultCategories(membership.workspaceId);
-    if (added > 0) {
-      await reclassifyUnlockedTransactions(membership.workspaceId);
-    }
     return { user, membership, workspace: membership.workspace };
   }
 
@@ -234,9 +231,8 @@ export async function ensureUserAndWorkspace(options?: { inviteToken?: string })
   return { user, membership, workspace: membership.workspace };
 }
 
-export async function getWorkspaceContext() {
-  return ensureUserAndWorkspace();
-}
+/** Request-scoped workspace lookup (dedupes within a single server render). */
+export const getWorkspaceContext = cache(async () => ensureUserAndWorkspace());
 
 /** Insert missing default categories. Returns how many rows were created. */
 export async function seedDefaultCategories(workspaceId: string): Promise<number> {

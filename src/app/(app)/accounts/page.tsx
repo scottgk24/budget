@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useLedger } from "@/components/ledger-context";
 import { PlaidLinkButton } from "@/components/plaid-link-button";
 import { Button, Card, EmptyState, PageHeader, Select } from "@/components/ui";
+import { signedAccountBalance } from "@/lib/accounts";
 import { formatCurrency, formatDate } from "@/lib/format";
 
 type Account = {
@@ -191,7 +192,9 @@ export default function AccountsPage() {
               <div className="flex flex-col items-end gap-2">
                 <p className="font-display text-xl">
                   {acct.currentBalance != null
-                    ? formatCurrency(acct.currentBalance)
+                    ? formatCurrency(
+                        signedAccountBalance(acct.type, acct.currentBalance),
+                      )
                     : "—"}
                 </p>
                 <Select

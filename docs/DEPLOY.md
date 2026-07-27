@@ -39,7 +39,7 @@ Set these in Vercel → Project → Settings → Environment Variables:
 
 | Variable | Notes |
 |---|---|
-| `DATABASE_URL` | Neon Postgres connection string |
+| `DATABASE_URL` | Neon **pooled** Postgres URL (`-pooler` host) with `pgbouncer=true&connect_timeout=15` (plus Neon’s `sslmode` / `channel_binding`) |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk |
 | `CLERK_SECRET_KEY` | Clerk |
 | `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | `/sign-in` |
