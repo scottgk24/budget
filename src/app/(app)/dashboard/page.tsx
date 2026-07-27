@@ -17,6 +17,7 @@ import {
   type MetricsRangeId,
   parseMetricsRangeId,
 } from "@/lib/format";
+import { ledgerCopy, ledgerLabel } from "@/lib/ledger-copy";
 
 const chartFallback = (
   <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
@@ -90,6 +91,7 @@ const PERIODS: Array<{ id: MetricsGranularity; label: string }> = [
 
 export default function DashboardPage() {
   const { ledger } = useLedger();
+  const copy = ledgerCopy(ledger);
   const [data, setData] = useState<DashboardData | null>(null);
   const [metrics, setMetrics] = useState<MetricsData | null>(null);
   const [granularity, setGranularity] = useState<MetricsGranularity>("monthly");
@@ -156,8 +158,8 @@ export default function DashboardPage() {
   return (
     <div>
       <PageHeader
-        title="Dashboard"
-        description={`${ledger === "personal" ? "Personal" : "Business"} · ${monthKey()}`}
+        title={copy.dashboardTitle}
+        description={`${ledgerLabel(ledger)} · ${monthKey()}`}
       />
 
       {error ? (
@@ -168,8 +170,8 @@ export default function DashboardPage() {
         <p className="text-[var(--muted)]">Loading…</p>
       ) : data && data.accountCount === 0 ? (
         <EmptyState
-          title="Connect your first account"
-          description="Link Chase or Robinhood through Plaid to see balances and spending here."
+          title={copy.emptyAccountsTitle}
+          description={copy.emptyAccountsDescription}
           action={
             <Link
               href="/accounts"
@@ -183,25 +185,25 @@ export default function DashboardPage() {
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Card>
-              <p className="text-sm text-[var(--muted)]">Balance</p>
+              <p className="text-sm text-[var(--muted)]">{copy.balance}</p>
               <p className="mt-2 font-display text-2xl">
                 {formatCurrency(data.totalBalance)}
               </p>
             </Card>
             <Card>
-              <p className="text-sm text-[var(--muted)]">Spent this month</p>
+              <p className="text-sm text-[var(--muted)]">{copy.spentThisMonth}</p>
               <p className="mt-2 font-display text-2xl">
                 {formatCurrency(data.spent)}
               </p>
             </Card>
             <Card>
-              <p className="text-sm text-[var(--muted)]">Income this month</p>
+              <p className="text-sm text-[var(--muted)]">{copy.incomeThisMonth}</p>
               <p className="mt-2 font-display text-2xl">
                 {formatCurrency(data.income)}
               </p>
             </Card>
             <Card>
-              <p className="text-sm text-[var(--muted)]">Budget remaining</p>
+              <p className="text-sm text-[var(--muted)]">{copy.budgetRemaining}</p>
               <p className="mt-2 font-display text-2xl">
                 {remaining === null ? "—" : formatCurrency(remaining)}
               </p>
@@ -212,7 +214,7 @@ export default function DashboardPage() {
             <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
               <div>
                 <h2 className="font-display text-xl">
-                  Spend & savings
+                  {copy.chartsSection}
                 </h2>
                 <p className="mt-0.5 text-sm text-[var(--muted)]">
                   {rangeLabel} · {bucketLabel} buckets · click a point to drill in
@@ -249,7 +251,7 @@ export default function DashboardPage() {
 
             <div className="mb-4 grid gap-4 sm:grid-cols-3">
               <Card>
-                <p className="text-sm text-[var(--muted)]">Spend</p>
+                <p className="text-sm text-[var(--muted)]">{copy.spend}</p>
                 <p className="mt-2 font-display text-xl">
                   {metricsLoading && !metrics
                     ? "…"
@@ -257,7 +259,7 @@ export default function DashboardPage() {
                 </p>
               </Card>
               <Card>
-                <p className="text-sm text-[var(--muted)]">Income</p>
+                <p className="text-sm text-[var(--muted)]">{copy.income}</p>
                 <p className="mt-2 font-display text-xl">
                   {metricsLoading && !metrics
                     ? "…"
@@ -266,9 +268,9 @@ export default function DashboardPage() {
               </Card>
               <Card>
                 <p className="text-sm text-[var(--muted)]">
-                  Savings
+                  {copy.savings}
                   {metrics?.totals.savingsRate != null
-                    ? ` · ${metrics.totals.savingsRate.toFixed(0)}% rate`
+                    ? copy.savingsRateSuffix(metrics.totals.savingsRate)
                     : ""}
                 </p>
                 <p
@@ -288,7 +290,7 @@ export default function DashboardPage() {
             <div className="grid gap-6 lg:grid-cols-2">
               <Card>
                 <h3 className="mb-3 font-display text-lg">
-                  Income vs spend
+                  {copy.incomeVsSpend}
                 </h3>
                 {metricsLoading && !metrics ? (
                   <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
@@ -299,12 +301,14 @@ export default function DashboardPage() {
                     data={metrics?.series ?? []}
                     onSelectPeriod={selectPeriod}
                     selectedKey={selectedPeriodKey}
+                    incomeLabel={copy.income}
+                    spendLabel={copy.spend}
                   />
                 )}
               </Card>
               <Card>
                 <h3 className="mb-3 font-display text-lg">
-                  Net savings
+                  {copy.netSavings}
                 </h3>
                 {metricsLoading && !metrics ? (
                   <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
@@ -315,6 +319,8 @@ export default function DashboardPage() {
                     data={metrics?.series ?? []}
                     onSelectPeriod={selectPeriod}
                     selectedKey={selectedPeriodKey}
+                    savingsLabel={copy.savings}
+                    emptyLabel={copy.noSavingsData}
                   />
                 )}
               </Card>
@@ -324,7 +330,7 @@ export default function DashboardPage() {
               <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
                 <div>
                   <h3 className="font-display text-lg">
-                    Account balance over time
+                    {copy.accountBalance}
                   </h3>
                   <p className="mt-0.5 text-sm text-[var(--muted)]">
                     Reconstructed from current balances and synced transactions
@@ -363,10 +369,10 @@ export default function DashboardPage() {
             <Card>
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="font-display text-lg">
-                  Top categories
+                  {copy.topCategories}
                 </h2>
                 <Link href="/budgets" className="text-sm text-[var(--accent)]">
-                  Budgets
+                  {copy.budgetsLink}
                 </Link>
               </div>
               {data.categorySpend.length === 0 ? (
@@ -452,7 +458,7 @@ export default function DashboardPage() {
           {data.holdings.length > 0 ? (
             <Card className="mt-6">
               <h2 className="mb-4 font-display text-lg">
-                Holdings
+                {copy.holdings}
               </h2>
               <ul className="divide-y divide-[var(--border)]">
                 {data.holdings.map((h) => (

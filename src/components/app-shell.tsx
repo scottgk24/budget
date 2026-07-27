@@ -7,18 +7,11 @@ import { useEffect, useState, type ReactNode, type SVGProps } from "react";
 import { BrandMark } from "@/components/brand-mark";
 import { useLedger } from "@/components/ledger-context";
 import { cn } from "@/lib/format";
+import { ledgerCopy } from "@/lib/ledger-copy";
 
 const NAV_COLLAPSED_KEY = "sage-nav-collapsed";
 
 type NavIcon = (props: SVGProps<SVGSVGElement>) => ReactNode;
-
-const NAV: Array<{ href: string; label: string; icon: NavIcon }> = [
-  { href: "/dashboard", label: "Dashboard", icon: IconDashboard },
-  { href: "/transactions", label: "Transactions", icon: IconTransactions },
-  { href: "/budgets", label: "Budgets", icon: IconBudgets },
-  { href: "/accounts", label: "Accounts", icon: IconAccounts },
-  { href: "/settings", label: "Settings", icon: IconSettings },
-];
 
 function iconClass(className?: string) {
   return cn("h-[1.125rem] w-[1.125rem] shrink-0", className);
@@ -101,6 +94,18 @@ function IconClose(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+const NAV: Array<{
+  href: string;
+  icon: NavIcon;
+  label: (copy: ReturnType<typeof ledgerCopy>) => string;
+}> = [
+  { href: "/dashboard", icon: IconDashboard, label: (c) => c.navDashboard },
+  { href: "/transactions", icon: IconTransactions, label: () => "Transactions" },
+  { href: "/budgets", icon: IconBudgets, label: (c) => c.navBudgets },
+  { href: "/accounts", icon: IconAccounts, label: () => "Accounts" },
+  { href: "/settings", icon: IconSettings, label: () => "Settings" },
+];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -233,6 +238,7 @@ function SidebarPanel({
   onCloseMobile?: () => void;
   showCloseMobile: boolean;
 }) {
+  const copy = ledgerCopy(ledger);
   return (
     <div className="flex h-full flex-col">
       <div
@@ -276,12 +282,13 @@ function SidebarPanel({
         {NAV.map((item) => {
           const active = pathname.startsWith(item.href);
           const Icon = item.icon;
+          const label = item.label(copy);
           return (
             <Link
               key={item.href}
               href={item.href}
-              title={collapsed ? item.label : undefined}
-              aria-label={collapsed ? item.label : undefined}
+              title={collapsed ? label : undefined}
+              aria-label={collapsed ? label : undefined}
               className={cn(
                 "flex items-center gap-3 rounded-md text-sm transition-colors",
                 collapsed ? "justify-center px-2 py-2.5" : "px-3 py-2.5",
@@ -291,7 +298,7 @@ function SidebarPanel({
               )}
             >
               <Icon />
-              {!collapsed ? <span>{item.label}</span> : null}
+              {!collapsed ? <span>{label}</span> : null}
             </Link>
           );
         })}

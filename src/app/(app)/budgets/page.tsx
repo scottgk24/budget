@@ -10,6 +10,7 @@ import {
   monthKey,
   monthlyAllotment,
 } from "@/lib/format";
+import { ledgerCopy } from "@/lib/ledger-copy";
 import { getDate, getDayOfYear, getDaysInMonth, getDaysInYear } from "date-fns";
 
 const CategoryPieChart = dynamic(
@@ -164,10 +165,12 @@ function BudgetAmountInput({
   value,
   disabled,
   onCommit,
+  ariaLabel = "Budget amount",
 }: {
   value: number;
   disabled?: boolean;
   onCommit: (next: number) => void;
+  ariaLabel?: string;
 }) {
   const [text, setText] = useState(String(Math.round(value)));
 
@@ -199,7 +202,7 @@ function BudgetAmountInput({
         type="text"
         inputMode="decimal"
         disabled={disabled}
-        aria-label="Budget amount"
+        aria-label={ariaLabel}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onBlur={commit}
@@ -218,6 +221,7 @@ function BudgetAmountInput({
 
 export default function BudgetsPage() {
   const { ledger } = useLedger();
+  const copy = ledgerCopy(ledger);
   const month = monthKey();
   const [categories, setCategories] = useState<Category[]>([]);
   const [spentByCategory, setSpentByCategory] = useState<Record<string, number>>({});
@@ -338,7 +342,7 @@ export default function BudgetsPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Save failed");
       setSaved((s) => ({ ...s, [categoryId]: rounded }));
-      setNotice("Budget saved");
+      setNotice(ledger === "business" ? "Limit saved" : "Budget saved");
       window.setTimeout(() => setNotice(null), 1500);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
@@ -359,7 +363,15 @@ export default function BudgetsPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Failed to update period");
-      setNotice(budgetPeriod === "annual" ? "Switched to yearly budget" : "Switched to monthly budget");
+      setNotice(
+        budgetPeriod === "annual"
+          ? ledger === "business"
+            ? "Switched to yearly limit"
+            : "Switched to yearly budget"
+          : ledger === "business"
+            ? "Switched to monthly limit"
+            : "Switched to monthly budget",
+      );
       window.setTimeout(() => setNotice(null), 1500);
       await load();
     } catch (err) {
@@ -372,8 +384,8 @@ export default function BudgetsPage() {
   return (
     <div>
       <PageHeader
-        title="Budgets"
-        description={`Monthly limits · yearly for Travel, Insurance, Gifts · ${ledger === "personal" ? "Personal" : "Business"} · ${month}`}
+        title={copy.budgetsTitle}
+        description={copy.budgetsDescription(month)}
       />
 
       {error ? <p className="mb-4 text-sm text-[var(--danger)]">{error}</p> : null}
@@ -388,7 +400,7 @@ export default function BudgetsPage() {
         <>
           <div className="mb-6 grid gap-4 sm:grid-cols-3">
             <Card>
-              <p className="text-sm text-[var(--muted)]">Total budgeted (monthly)</p>
+              <p className="text-sm text-[var(--muted)]">{copy.totalBudgeted}</p>
               <p className="mt-2 font-display text-2xl tabular-nums">
                 {formatCurrency(totalBudgeted)}
               </p>
@@ -397,13 +409,13 @@ export default function BudgetsPage() {
               </p>
             </Card>
             <Card>
-              <p className="text-sm text-[var(--muted)]">Spent this month</p>
+              <p className="text-sm text-[var(--muted)]">{copy.spentThisMonth}</p>
               <p className="mt-2 font-display text-2xl tabular-nums">
                 {formatCurrency(totalSpent)}
               </p>
             </Card>
             <Card>
-              <p className="text-sm text-[var(--muted)]">Remaining</p>
+              <p className="text-sm text-[var(--muted)]">{copy.remaining}</p>
               <p
                 className={`mt-2 font-display text-2xl tabular-nums ${
                   totalBudgeted - totalSpent >= 0
@@ -421,26 +433,34 @@ export default function BudgetsPage() {
           <div className="mb-6 grid gap-4 lg:grid-cols-2">
             <Card>
               <h2 className="mb-1 font-display text-lg">
-                Budget mix
+                {copy.budgetMix}
               </h2>
               <p className="mb-3 text-sm text-[var(--muted)]">
-                How this month&apos;s budget is allocated
+                {copy.budgetMixHint}
               </p>
               <CategoryPieChart
                 data={budgetSlices}
-                emptyLabel="Set some category budgets to see the mix"
+                emptyLabel={
+                  ledger === "business"
+                    ? "Set some category limits to see the mix"
+                    : "Set some category budgets to see the mix"
+                }
               />
             </Card>
             <Card>
               <h2 className="mb-1 font-display text-lg">
-                Spend mix
+                {copy.spendMix}
               </h2>
               <p className="mb-3 text-sm text-[var(--muted)]">
-                Where spending went this month
+                {copy.spendMixHint}
               </p>
               <CategoryPieChart
                 data={spendSlices}
-                emptyLabel="No spending in these categories yet"
+                emptyLabel={
+                  ledger === "business"
+                    ? "No expenses in these categories yet"
+                    : "No spending in these categories yet"
+                }
               />
             </Card>
           </div>
@@ -466,9 +486,9 @@ export default function BudgetsPage() {
               )}
             >
               <span>Category</span>
-              <span className="text-right">Budget</span>
+              <span className="text-right">{copy.budgetColumn}</span>
               <span className="text-right">Actual</span>
-              <span className="text-right">Remaining</span>
+              <span className="text-right">{copy.remaining}</span>
               <span className="sr-only">Expand</span>
             </div>
 
@@ -531,12 +551,13 @@ export default function BudgetsPage() {
                       <div className="col-span-2 grid grid-cols-3 gap-2 sm:col-span-1 sm:contents">
                         <div className="min-w-0 sm:justify-self-end">
                           <p className="mb-0.5 text-[10px] uppercase tracking-wide text-[var(--muted)] sm:hidden">
-                            Budget
+                            {copy.budgetColumn}
                           </p>
                           <BudgetAmountInput
                             value={budgetAmt}
                             disabled={saving === cat.id}
                             onCommit={(next) => void save(cat.id, next)}
+                            ariaLabel={`${copy.budgetColumn} amount`}
                           />
                         </div>
                         <div className="min-w-0 text-right">
@@ -554,7 +575,7 @@ export default function BudgetsPage() {
                         </div>
                         <div className="min-w-0 text-right">
                           <p className="mb-0.5 text-[10px] uppercase tracking-wide text-[var(--muted)] sm:hidden">
-                            Remaining
+                            {copy.remaining}
                           </p>
                           <p
                             className={cn(

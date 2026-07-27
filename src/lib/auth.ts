@@ -2,7 +2,7 @@ import { cache } from "react";
 import { auth, currentUser } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 import {
-  DEFAULT_ANNUAL_CATEGORIES,
+  defaultAnnualCategoriesForLedger,
   defaultBudgetPeriodForName,
   defaultCategoriesForLedger,
 } from "@/lib/categories";
@@ -202,14 +202,14 @@ export async function ensureUserAndWorkspace(options?: { inviteToken?: string })
   // New workspace: allowlisted emails only (open allowlist only in non-production).
   if (!isEmailAllowed(email)) {
     throw new AuthError(
-      "This app is invite-only. Ask a family member to invite you.",
+      "This app is invite-only. Ask a workspace member to invite you.",
       403,
     );
   }
 
   if (isProductionRuntime() && parseAllowedEmails().length === 0) {
     throw new AuthError(
-      "This app is invite-only. Ask a family member to invite you.",
+      "This app is invite-only. Ask a workspace member to invite you.",
       403,
     );
   }
@@ -242,14 +242,14 @@ export async function seedDefaultCategories(workspaceId: string): Promise<number
       name,
       ledger: "personal" as const,
       isDefault: true,
-      budgetPeriod: defaultBudgetPeriodForName(name),
+      budgetPeriod: defaultBudgetPeriodForName(name, "personal"),
     })),
     ...defaultCategoriesForLedger("business").map((name) => ({
       workspaceId,
       name,
       ledger: "business" as const,
       isDefault: true,
-      budgetPeriod: defaultBudgetPeriodForName(name),
+      budgetPeriod: defaultBudgetPeriodForName(name, "business"),
     })),
   ];
 
@@ -267,11 +267,12 @@ export async function seedDefaultCategories(workspaceId: string): Promise<number
   }
 
   // Align lumpy defaults to annual even if they already existed as monthly.
-  const toAnnual = existing.filter(
-    (c) =>
-      (DEFAULT_ANNUAL_CATEGORIES as readonly string[]).includes(c.name) &&
-      c.budgetPeriod === "monthly",
-  );
+  const toAnnual = existing.filter((c) => {
+    const annual = defaultAnnualCategoriesForLedger(
+      c.ledger === "business" ? "business" : "personal",
+    ) as readonly string[];
+    return annual.includes(c.name) && c.budgetPeriod === "monthly";
+  });
   if (toAnnual.length > 0) {
     await prisma.category.updateMany({
       where: { id: { in: toAnnual.map((c) => c.id) } },

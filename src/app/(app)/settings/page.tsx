@@ -86,7 +86,7 @@ export default function SettingsPage() {
     <div>
       <PageHeader
         title="Settings"
-        description="Family access and workspace preferences"
+        description="Workspace access and preferences"
       />
 
       {error ? <p className="mb-4 text-sm text-[var(--danger)]">{error}</p> : null}
@@ -117,11 +117,12 @@ export default function SettingsPage() {
 
         <Card className="lg:col-span-2">
           <h2 className="font-display text-lg">
-            Invite family
+            Invite collaborators
           </h2>
           <p className="mt-1 text-sm text-[var(--muted)]">
-            Invite-only access. Share the link with your spouse or family members.
-            You can also restrict sign-in with <code>ALLOWED_EMAILS</code> in env.
+            Invite-only access. Share the link with a partner, bookkeeper, or anyone
+            who should see the workspace. You can also restrict sign-in with{" "}
+            <code>ALLOWED_EMAILS</code> in env.
           </p>
 
           {role === "owner" ? (
@@ -186,7 +187,7 @@ export default function SettingsPage() {
             <li>Plaid access tokens are encrypted at rest with TOKEN_ENCRYPTION_KEY.</li>
             <li>Webhooks are verified with Plaid JWT signatures.</li>
             <li>This app is read-only: no transfers or bill pay.</li>
-            <li>Any family member can link or disconnect banks; owners manage invites.</li>
+            <li>Any member can link or disconnect banks; owners manage invites.</li>
             <li>
               Production: set ALLOWED_EMAILS, Clerk invite-only, Postgres, and a unique
               TOKEN_ENCRYPTION_KEY.

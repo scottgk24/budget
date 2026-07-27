@@ -60,7 +60,20 @@ export const PERSONAL_CATEGORIES = [
 ] as const;
 
 /** Categories that default to a yearly budget (lumpy spend). */
-export const DEFAULT_ANNUAL_CATEGORIES = ["Travel", "Insurance", "Gifts"] as const;
+export const DEFAULT_ANNUAL_CATEGORIES_PERSONAL = [
+  "Travel",
+  "Insurance",
+  "Gifts",
+] as const;
+
+export const DEFAULT_ANNUAL_CATEGORIES_BUSINESS = [
+  "Travel",
+  "Insurance",
+  "Taxes",
+] as const;
+
+/** @deprecated Prefer ledger-specific lists; kept for broad personal defaults. */
+export const DEFAULT_ANNUAL_CATEGORIES = DEFAULT_ANNUAL_CATEGORIES_PERSONAL;
 
 export type BudgetPeriod = "monthly" | "annual";
 
@@ -68,10 +81,20 @@ export function isAnnualBudgetPeriod(period: string | null | undefined): boolean
   return period === "annual";
 }
 
-export function defaultBudgetPeriodForName(name: string): BudgetPeriod {
-  return (DEFAULT_ANNUAL_CATEGORIES as readonly string[]).includes(name)
-    ? "annual"
-    : "monthly";
+export function defaultAnnualCategoriesForLedger(
+  ledger: Ledger,
+): readonly string[] {
+  return ledger === "business"
+    ? DEFAULT_ANNUAL_CATEGORIES_BUSINESS
+    : DEFAULT_ANNUAL_CATEGORIES_PERSONAL;
+}
+
+export function defaultBudgetPeriodForName(
+  name: string,
+  ledger: Ledger = "personal",
+): BudgetPeriod {
+  const annual = defaultAnnualCategoriesForLedger(ledger) as readonly string[];
+  return annual.includes(name) ? "annual" : "monthly";
 }
 
 export const BUSINESS_CATEGORIES = [

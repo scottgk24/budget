@@ -6,6 +6,7 @@ import { PlaidLinkButton } from "@/components/plaid-link-button";
 import { Button, Card, EmptyState, PageHeader, Select } from "@/components/ui";
 import { signedAccountBalance } from "@/lib/accounts";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { ledgerCopy } from "@/lib/ledger-copy";
 
 type Account = {
   id: string;
@@ -37,6 +38,7 @@ type Item = {
 
 export default function AccountsPage() {
   const { ledger } = useLedger();
+  const copy = ledgerCopy(ledger);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [plaidConfigured, setPlaidConfigured] = useState(true);
@@ -129,7 +131,7 @@ export default function AccountsPage() {
     <div>
       <PageHeader
         title="Accounts"
-        description="Securely connect Chase and Robinhood via Plaid. Credentials never touch our servers."
+        description={copy.accountsDescription}
         actions={
           plaidConfigured ? (
             <PlaidLinkButton ledger={ledger} onSuccess={() => void load()} />
@@ -153,7 +155,7 @@ export default function AccountsPage() {
       {accounts.length === 0 ? (
         <EmptyState
           title="No linked accounts"
-          description="Connect Chase checking/credit or Robinhood brokerage. New connections are tagged with the current Personal/Business view."
+          description={copy.accountsEmpty}
           action={
             plaidConfigured ? (
               <PlaidLinkButton ledger={ledger} onSuccess={() => void load()} />

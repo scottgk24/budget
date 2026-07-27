@@ -63,7 +63,7 @@ export default async function InvitePage({
     return (
       <InviteMessage
         title="Invite expired"
-        description="Ask a family member to send a new invite."
+        description="Ask a workspace member to send a new invite."
       />
     );
   }

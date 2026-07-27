@@ -10,6 +10,8 @@ import {
   toDateParam,
   type MetricsGranularity,
 } from "@/lib/format";
+import { ledgerCopy } from "@/lib/ledger-copy";
+import type { Ledger } from "@/lib/types";
 
 type CategoryRow = {
   categoryId: string | null;
@@ -58,11 +60,12 @@ export function PeriodDrilldown({
 }: {
   open: boolean;
   onClose: () => void;
-  ledger: "personal" | "business";
+  ledger: Ledger;
   granularity: MetricsGranularity;
   periodKey: string | null;
 }) {
   const titleId = useId();
+  const copy = ledgerCopy(ledger);
   const [view, setView] = useState<View>("categories");
   const [summary, setSummary] = useState<PeriodSummary | null>(null);
   const [category, setCategory] = useState<SelectedCategory | null>(null);
@@ -222,19 +225,19 @@ export function PeriodDrilldown({
             <>
               <div className="mb-4 grid grid-cols-3 gap-3 text-center">
                 <div>
-                  <p className="text-xs text-[var(--muted)]">Spend</p>
+                  <p className="text-xs text-[var(--muted)]">{copy.spend}</p>
                   <p className="mt-1 text-sm font-medium tabular-nums">
                     {formatCurrency(summary.spend)}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-[var(--muted)]">Income</p>
+                  <p className="text-xs text-[var(--muted)]">{copy.income}</p>
                   <p className="mt-1 text-sm font-medium tabular-nums text-[var(--positive)]">
                     {formatCurrency(summary.income)}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs text-[var(--muted)]">Net</p>
+                  <p className="text-xs text-[var(--muted)]">{copy.savings}</p>
                   <p
                     className={`mt-1 text-sm font-medium tabular-nums ${
                       summary.savings >= 0 ? "text-[var(--positive)]" : "text-[var(--danger)]"

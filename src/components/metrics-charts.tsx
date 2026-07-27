@@ -28,6 +28,10 @@ type ChartProps = {
   data: MetricsPoint[];
   onSelectPeriod?: (point: MetricsPoint) => void;
   selectedKey?: string | null;
+  incomeLabel?: string;
+  spendLabel?: string;
+  savingsLabel?: string;
+  emptyLabel?: string;
 };
 
 const COLORS = {
@@ -91,7 +95,13 @@ function handleChartClick(
   }
 }
 
-export function SpendIncomeChart({ data, onSelectPeriod, selectedKey }: ChartProps) {
+export function SpendIncomeChart({
+  data,
+  onSelectPeriod,
+  selectedKey,
+  incomeLabel = "Income",
+  spendLabel = "Spend",
+}: ChartProps) {
   const hasData = data.some((d) => d.spend > 0 || d.income > 0);
 
   if (!hasData) {
@@ -143,7 +153,7 @@ export function SpendIncomeChart({ data, onSelectPeriod, selectedKey }: ChartPro
           <Area
             type="monotone"
             dataKey="income"
-            name="Income"
+            name={incomeLabel}
             stroke={COLORS.income}
             fill="url(#incomeFill)"
             strokeWidth={2}
@@ -153,7 +163,7 @@ export function SpendIncomeChart({ data, onSelectPeriod, selectedKey }: ChartPro
           <Area
             type="monotone"
             dataKey="spend"
-            name="Spend"
+            name={spendLabel}
             stroke={selectedKey ? COLORS.selected : COLORS.spend}
             fill="url(#spendFill)"
             strokeWidth={2}
@@ -166,13 +176,19 @@ export function SpendIncomeChart({ data, onSelectPeriod, selectedKey }: ChartPro
   );
 }
 
-export function SavingsChart({ data, onSelectPeriod, selectedKey }: ChartProps) {
+export function SavingsChart({
+  data,
+  onSelectPeriod,
+  selectedKey,
+  savingsLabel = "Savings",
+  emptyLabel = "No savings data in this period yet.",
+}: ChartProps) {
   const hasData = data.some((d) => d.spend > 0 || d.income > 0);
 
   if (!hasData) {
     return (
       <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
-        No savings data in this period yet.
+        {emptyLabel}
       </p>
     );
   }
@@ -202,7 +218,7 @@ export function SavingsChart({ data, onSelectPeriod, selectedKey }: ChartProps) 
             width={48}
           />
           <Tooltip content={<ChartTooltip />} />
-          <Bar dataKey="savings" name="Savings" radius={[4, 4, 0, 0]} maxBarSize={36}>
+          <Bar dataKey="savings" name={savingsLabel} radius={[4, 4, 0, 0]} maxBarSize={36}>
             {data.map((entry) => (
               <Cell
                 key={entry.key}

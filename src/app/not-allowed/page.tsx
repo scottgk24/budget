@@ -33,7 +33,7 @@ export default async function NotAllowedPage() {
             Invite only
           </h1>
           <p className="mt-3 text-[var(--muted)]">
-            This app is invite-only. Ask a family member who already has access to
+            This app is invite-only. Ask a workspace member who already has access to
             send you an invite.
           </p>
           {email ? (
