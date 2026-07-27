@@ -3,6 +3,11 @@ import { z } from "zod";
 import { endOfDay, parseISO, startOfDay } from "date-fns";
 import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
 import { upsertMerchantRule } from "@/lib/categorize";
+import {
+  OTHER_CATEGORY,
+  REVIEW_CATEGORY,
+  REVIEW_QUEUE_CATEGORY_NAMES,
+} from "@/lib/categories";
 import { prisma } from "@/lib/db";
 import { monthRange } from "@/lib/format";
 import type { Ledger } from "@/lib/types";
@@ -36,17 +41,34 @@ export async function GET(req: Request) {
     if (accountId) {
       where.accountId = accountId;
     }
-    if (categoryId === "none") {
+    const needsReview = searchParams.get("needsReview") === "1";
+    if (needsReview) {
+      where.isInvestment = false;
+      where.OR = [
+        { categoryId: null },
+        { category: { name: { in: [...REVIEW_QUEUE_CATEGORY_NAMES] } } },
+      ];
+    } else if (categoryId === "none") {
       where.categoryId = null;
+    } else if (categoryId === "review") {
+      where.category = { name: REVIEW_CATEGORY };
+    } else if (categoryId === "other") {
+      where.category = { name: OTHER_CATEGORY };
     } else if (categoryId) {
       where.categoryId = categoryId;
     }
     if (q) {
-      where.OR = [
+      const textOr = [
         { name: { contains: q } },
         { merchantName: { contains: q } },
         { notes: { contains: q } },
       ];
+      if (where.OR) {
+        where.AND = [{ OR: where.OR }, { OR: textOr }];
+        delete where.OR;
+      } else {
+        where.OR = textOr;
+      }
     }
 
     const transactions = await prisma.transaction.findMany({
@@ -104,11 +126,8 @@ export async function PATCH(req: Request) {
       where: { id: body.id },
       data: {
         categoryId: body.categoryId === undefined ? undefined : body.categoryId,
-        categorySource: categoryChanging
-          ? body.categoryId
-            ? "user"
-            : null
-          : undefined,
+        // Lock both assigned categories and intentional Uncategorized against sync.
+        categorySource: categoryChanging ? "user" : undefined,
         ledger: body.ledger,
         notes: body.notes === undefined ? undefined : body.notes,
       },
@@ -119,6 +138,7 @@ export async function PATCH(req: Request) {
     if (
       body.rememberMerchant &&
       body.categoryId &&
+      transaction.category?.name !== REVIEW_CATEGORY &&
       (transaction.merchantName || transaction.name)
     ) {
       ruleApplied = await upsertMerchantRule({

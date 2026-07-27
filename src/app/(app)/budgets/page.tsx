@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useLedger } from "@/components/ledger-context";
+import { HIDDEN_MONEY, useMoneyFormat, usePrivacy } from "@/components/privacy-context";
 import { Card, EmptyState, PageHeader } from "@/components/ui";
 import {
   cn,
-  formatCurrency,
   monthKey,
   monthlyAllotment,
 } from "@/lib/format";
@@ -32,7 +32,7 @@ type Category = {
 };
 type Budget = { id: string; categoryId: string; amount: number; category: Category };
 
-const SKIP = new Set(["Income", "Transfers"]);
+const SKIP = new Set(["Income", "Transfers", "Review"]);
 
 /** Expected progress through the budget period (0–1). */
 function periodPace(annual: boolean, now = new Date()): number {
@@ -73,6 +73,7 @@ function PaceProgressBar({
   /** Average spend on the same scale as `limit` (monthly or annualized). */
   average?: number;
 }) {
+  const { formatCurrency } = useMoneyFormat();
   if (limit <= 0) {
     return <div className="h-1 w-full rounded-full bg-[var(--border)]/40" />;
   }
@@ -172,6 +173,7 @@ function BudgetAmountInput({
   onCommit: (next: number) => void;
   ariaLabel?: string;
 }) {
+  const { hidden } = usePrivacy();
   const [text, setText] = useState(String(Math.round(value)));
 
   useEffect(() => {
@@ -188,6 +190,21 @@ function BudgetAmountInput({
   }
 
   const digits = Math.max(text.length, 3);
+
+  if (hidden) {
+    return (
+      <div
+        className={cn(
+          "inline-flex max-w-full items-center justify-end rounded-md border border-transparent",
+          "font-display text-sm tabular-nums text-[var(--muted)] sm:text-base",
+          disabled && "opacity-50",
+        )}
+        aria-label={ariaLabel}
+      >
+        {HIDDEN_MONEY}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -222,6 +239,7 @@ function BudgetAmountInput({
 export default function BudgetsPage() {
   const { ledger } = useLedger();
   const copy = ledgerCopy(ledger);
+  const { formatCurrency } = useMoneyFormat();
   const month = monthKey();
   const [categories, setCategories] = useState<Category[]>([]);
   const [spentByCategory, setSpentByCategory] = useState<Record<string, number>>({});
@@ -392,10 +410,7 @@ export default function BudgetsPage() {
       {notice ? <p className="mb-4 text-sm text-[var(--positive)]">{notice}</p> : null}
 
       {rows.length === 0 ? (
-        <EmptyState
-          title="No categories yet"
-          description="Categories are created when your workspace is set up."
-        />
+        <EmptyState title="No categories yet" />
       ) : (
         <>
           <div className="mb-6 grid gap-4 sm:grid-cols-3">
@@ -403,9 +418,6 @@ export default function BudgetsPage() {
               <p className="text-sm text-[var(--muted)]">{copy.totalBudgeted}</p>
               <p className="mt-2 font-display text-2xl tabular-nums">
                 {formatCurrency(totalBudgeted)}
-              </p>
-              <p className="mt-1 text-[11px] text-[var(--muted)]">
-                Annual categories count as yearly ÷ 12
               </p>
             </Card>
             <Card>
@@ -432,35 +444,21 @@ export default function BudgetsPage() {
 
           <div className="mb-6 grid gap-4 lg:grid-cols-2">
             <Card>
-              <h2 className="mb-1 font-display text-lg">
+              <h2 className="mb-3 font-display text-lg">
                 {copy.budgetMix}
               </h2>
-              <p className="mb-3 text-sm text-[var(--muted)]">
-                {copy.budgetMixHint}
-              </p>
               <CategoryPieChart
                 data={budgetSlices}
-                emptyLabel={
-                  ledger === "business"
-                    ? "Set some category limits to see the mix"
-                    : "Set some category budgets to see the mix"
-                }
+                emptyLabel="Nothing here yet"
               />
             </Card>
             <Card>
-              <h2 className="mb-1 font-display text-lg">
+              <h2 className="mb-3 font-display text-lg">
                 {copy.spendMix}
               </h2>
-              <p className="mb-3 text-sm text-[var(--muted)]">
-                {copy.spendMixHint}
-              </p>
               <CategoryPieChart
                 data={spendSlices}
-                emptyLabel={
-                  ledger === "business"
-                    ? "No expenses in these categories yet"
-                    : "No spending in these categories yet"
-                }
+                emptyLabel="Nothing here yet"
               />
             </Card>
           </div>
@@ -679,12 +677,6 @@ export default function BudgetsPage() {
           </Card>
         </>
       )}
-
-      <p className="mt-6 text-xs text-[var(--muted)]">
-        Progress bars are green on pace, gold when ahead of schedule, and red when over budget.
-        TODAY marks where you are in the period; AVG marks typical monthly spend (annualized on
-        yearly views). Expand a row for monthly/annual settings and year-to-date progress.
-      </p>
     </div>
   );
 }

@@ -6,11 +6,10 @@ import Link from "next/link";
 import { useLedger } from "@/components/ledger-context";
 import type { MetricsPoint } from "@/components/metrics-charts";
 import { PeriodDrilldown } from "@/components/period-drilldown";
+import { useMoneyFormat } from "@/components/privacy-context";
 import { Button, Card, EmptyState, PageHeader, Select } from "@/components/ui";
 import {
-  formatCurrency,
   formatDate,
-  formatSignedCurrency,
   METRICS_RANGES,
   monthKey,
   type MetricsGranularity,
@@ -92,6 +91,7 @@ const PERIODS: Array<{ id: MetricsGranularity; label: string }> = [
 export default function DashboardPage() {
   const { ledger } = useLedger();
   const copy = ledgerCopy(ledger);
+  const { formatCurrency, formatSignedCurrency } = useMoneyFormat();
   const [data, setData] = useState<DashboardData | null>(null);
   const [metrics, setMetrics] = useState<MetricsData | null>(null);
   const [granularity, setGranularity] = useState<MetricsGranularity>("monthly");
@@ -217,7 +217,7 @@ export default function DashboardPage() {
                   {copy.chartsSection}
                 </h2>
                 <p className="mt-0.5 text-sm text-[var(--muted)]">
-                  {rangeLabel} · {bucketLabel} buckets · click a point to drill in
+                  {rangeLabel} · {bucketLabel}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -332,9 +332,6 @@ export default function DashboardPage() {
                   <h3 className="font-display text-lg">
                     {copy.accountBalance}
                   </h3>
-                  <p className="mt-0.5 text-sm text-[var(--muted)]">
-                    Reconstructed from current balances and synced transactions
-                  </p>
                 </div>
                 <p className="text-sm tabular-nums text-[var(--muted)]">
                   Now{" "}

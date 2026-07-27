@@ -7,6 +7,7 @@ import {
   UserButton,
 } from "@clerk/nextjs";
 import { BrandMark } from "@/components/brand-mark";
+import { LandingProductPreview } from "@/components/landing-mockups";
 import { isClerkConfigured } from "@/lib/env";
 
 export default async function HomePage() {
@@ -77,7 +78,7 @@ export default async function HomePage() {
           </h1>
           <p className="sage-rise sage-rise-delay-1 mt-5 max-w-md text-base leading-relaxed text-[var(--muted)] sm:text-lg">
             Connect your accounts, track spending across Personal and Business
-            views, and keep the family on the same page.
+            views, and keep collaborators on the same page.
           </p>
           <div className="sage-rise sage-rise-delay-2 mt-10 flex flex-wrap gap-3">
             <Show when="signed-out">
@@ -129,6 +130,8 @@ export default async function HomePage() {
         </div>
       </main>
 
+      <LandingProductPreview />
+
       <section className="relative z-10 border-t border-[color-mix(in_srgb,var(--border)_70%,transparent)]">
         <div className="mx-auto grid max-w-6xl gap-10 px-6 py-14 sm:grid-cols-3 sm:gap-8 sm:py-16">
           {[
@@ -138,7 +141,7 @@ export default async function HomePage() {
             },
             {
               title: "Shared quietly",
-              body: "Invite family into one workspace without spreading bank logins around.",
+              body: "Invite collaborators into one workspace without spreading bank logins around.",
             },
             {
               title: "Private by design",

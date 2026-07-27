@@ -25,13 +25,10 @@ export type LedgerCopy = {
   totalBudgeted: string;
   remaining: string;
   budgetMix: string;
-  budgetMixHint: string;
   spendMix: string;
-  spendMixHint: string;
   budgetColumn: string;
   navDashboard: string;
   navBudgets: string;
-  accountsDescription: string;
   accountsEmpty: string;
 };
 
@@ -45,33 +42,26 @@ const personal: LedgerCopy = {
   spend: "Spend",
   income: "Income",
   savings: "Savings",
-  savingsRateSuffix: (rate) => ` · ${rate.toFixed(0)}% rate`,
+  savingsRateSuffix: (rate) => ` · ${rate.toFixed(0)}%`,
   incomeVsSpend: "Income vs spend",
   netSavings: "Net savings",
-  noSavingsData: "No savings data in this period yet.",
-  accountBalance: "Account balance over time",
+  noSavingsData: "No data in this period yet.",
+  accountBalance: "Account balance",
   topCategories: "Top categories",
   budgetsLink: "Budgets",
   holdings: "Holdings",
-  emptyAccountsTitle: "Connect your first account",
-  emptyAccountsDescription:
-    "Link Chase or Robinhood through Plaid to see balances and spending here.",
+  emptyAccountsTitle: "Connect an account",
+  emptyAccountsDescription: "Link a bank through Plaid to get started.",
   budgetsTitle: "Budgets",
-  budgetsDescription: (month) =>
-    `Monthly limits · yearly for Travel, Insurance, Gifts · Personal · ${month}`,
-  totalBudgeted: "Total budgeted (monthly)",
+  budgetsDescription: (month) => `Personal · ${month}`,
+  totalBudgeted: "Budgeted",
   remaining: "Remaining",
   budgetMix: "Budget mix",
-  budgetMixHint: "How this month's budget is allocated",
   spendMix: "Spend mix",
-  spendMixHint: "Where spending went this month",
   budgetColumn: "Budget",
   navDashboard: "Dashboard",
   navBudgets: "Budgets",
-  accountsDescription:
-    "Securely connect Chase and Robinhood via Plaid. Credentials never touch our servers.",
-  accountsEmpty:
-    "Connect Chase checking/credit or Robinhood brokerage. New connections are tagged with the current Personal/Business view.",
+  accountsEmpty: "Connect a bank account to get started.",
 };
 
 const business: LedgerCopy = {
@@ -84,33 +74,26 @@ const business: LedgerCopy = {
   spend: "Expenses",
   income: "Revenue",
   savings: "Profit",
-  savingsRateSuffix: (rate) => ` · ${rate.toFixed(0)}% margin`,
+  savingsRateSuffix: (rate) => ` · ${rate.toFixed(0)}%`,
   incomeVsSpend: "Revenue vs expenses",
   netSavings: "Net profit",
-  noSavingsData: "No profit data in this period yet.",
-  accountBalance: "Cash balance over time",
+  noSavingsData: "No data in this period yet.",
+  accountBalance: "Cash balance",
   topCategories: "Top expenses",
   budgetsLink: "Limits",
   holdings: "Investments",
-  emptyAccountsTitle: "Connect a business account",
-  emptyAccountsDescription:
-    "Link a business checking or credit account through Plaid to see cash and expenses here.",
+  emptyAccountsTitle: "Connect an account",
+  emptyAccountsDescription: "Link a bank through Plaid to get started.",
   budgetsTitle: "Expense limits",
-  budgetsDescription: (month) =>
-    `Monthly expense caps · yearly for Insurance, Taxes, Travel · Business · ${month}`,
-  totalBudgeted: "Total limited (monthly)",
+  budgetsDescription: (month) => `Business · ${month}`,
+  totalBudgeted: "Limited",
   remaining: "Remaining",
   budgetMix: "Limit mix",
-  budgetMixHint: "How this month's expense limits are allocated",
   spendMix: "Expense mix",
-  spendMixHint: "Where expenses went this month",
   budgetColumn: "Limit",
   navDashboard: "Cash flow",
   navBudgets: "Limits",
-  accountsDescription:
-    "Securely connect business checking and credit via Plaid. Credentials never touch our servers.",
-  accountsEmpty:
-    "Connect a business checking or credit account. New connections are tagged with the current Personal/Business view.",
+  accountsEmpty: "Connect a bank account to get started.",
 };
 
 export function ledgerCopy(ledger: Ledger): LedgerCopy {

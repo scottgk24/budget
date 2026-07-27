@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLedger } from "@/components/ledger-context";
 import { PlaidLinkButton } from "@/components/plaid-link-button";
+import { useMoneyFormat } from "@/components/privacy-context";
 import { Button, Card, EmptyState, PageHeader, Select } from "@/components/ui";
 import { signedAccountBalance } from "@/lib/accounts";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import { ledgerCopy } from "@/lib/ledger-copy";
 
 type Account = {
@@ -39,6 +40,7 @@ type Item = {
 export default function AccountsPage() {
   const { ledger } = useLedger();
   const copy = ledgerCopy(ledger);
+  const { formatCurrency } = useMoneyFormat();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [plaidConfigured, setPlaidConfigured] = useState(true);
@@ -131,7 +133,6 @@ export default function AccountsPage() {
     <div>
       <PageHeader
         title="Accounts"
-        description={copy.accountsDescription}
         actions={
           plaidConfigured ? (
             <PlaidLinkButton ledger={ledger} onSuccess={() => void load()} />
@@ -144,8 +145,7 @@ export default function AccountsPage() {
           <p className="font-medium">Plaid not configured</p>
           <p className="mt-1 text-sm text-[var(--muted)]">
             Add <code>PLAID_CLIENT_ID</code> and <code>PLAID_SECRET</code> to{" "}
-            <code>.env.local</code> (sandbox keys from the Plaid dashboard) to enable
-            bank connections.
+            <code>.env.local</code> to enable bank connections.
           </p>
         </Card>
       ) : null}

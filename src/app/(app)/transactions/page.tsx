@@ -1,16 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { format, subDays } from "date-fns";
 import { useLedger } from "@/components/ledger-context";
+import { useMoneyFormat } from "@/components/privacy-context";
 import { Button, Card, EmptyState, Input, PageHeader, Select } from "@/components/ui";
 import {
   formatDate,
   formatMonthLabel,
-  formatSignedCurrency,
   monthKey,
   recentMonthKeys,
 } from "@/lib/format";
-import { merchantRuleKey } from "@/lib/categories";
+import { merchantRuleKey, OTHER_CATEGORY, REVIEW_CATEGORY } from "@/lib/categories";
 
 type Category = { id: string; name: string; ledger: string };
 type Account = { id: string; name: string; mask: string | null };
@@ -31,14 +33,26 @@ type Tx = {
 
 const MONTH_OPTIONS = recentMonthKeys(18);
 
-export default function TransactionsPage() {
+function sortCategories(cats: Category[]): Category[] {
+  return [...cats].sort((a, b) => {
+    if (a.name === REVIEW_CATEGORY) return -1;
+    if (b.name === REVIEW_CATEGORY) return 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function TransactionsPageInner() {
   const { ledger } = useLedger();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { formatSignedCurrency } = useMoneyFormat();
   const [transactions, setTransactions] = useState<Tx[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [month, setMonth] = useState(monthKey());
   const [accountId, setAccountId] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  const [filterLedger, setFilterLedger] = useState(ledger);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,18 +64,47 @@ export default function TransactionsPage() {
     categoryName: string;
   } | null>(null);
 
+  const needsReview = searchParams.get("needsReview") === "1";
+
+  if (filterLedger !== ledger) {
+    setFilterLedger(ledger);
+    setAccountId("");
+    setCategoryId("");
+    setRememberPrompt(null);
+  }
+
+  function setNeedsReviewFilter(next: boolean) {
+    if (next) setCategoryId("");
+    const params = new URLSearchParams(searchParams.toString());
+    if (next) params.set("needsReview", "1");
+    else params.delete("needsReview");
+    const qs = params.toString();
+    router.replace(qs ? `/transactions?${qs}` : "/transactions", { scroll: false });
+  }
+
+  const sortedCategories = useMemo(
+    () => sortCategories(categories),
+    [categories],
+  );
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams({
         ledger,
-        month,
         limit: "200",
       });
+      if (needsReview) {
+        params.set("needsReview", "1");
+        params.set("from", format(subDays(new Date(), 90), "yyyy-MM-dd"));
+        params.set("to", format(new Date(), "yyyy-MM-dd"));
+      } else {
+        params.set("month", month);
+        if (categoryId) params.set("categoryId", categoryId);
+      }
       if (q.trim()) params.set("q", q.trim());
       if (accountId) params.set("accountId", accountId);
-      if (categoryId) params.set("categoryId", categoryId);
 
       const [txRes, catRes, acctRes] = await Promise.all([
         fetch(`/api/transactions?${params}`),
@@ -88,13 +131,7 @@ export default function TransactionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [ledger, month, accountId, categoryId, q]);
-
-  useEffect(() => {
-    setAccountId("");
-    setCategoryId("");
-    setRememberPrompt(null);
-  }, [ledger]);
+  }, [ledger, month, accountId, categoryId, needsReview, q]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 200);
@@ -131,7 +168,12 @@ export default function TransactionsPage() {
     const merchant = tx.merchantName || tx.name;
     const cleaned = merchantRuleKey(merchant);
     const cat = categories.find((c) => c.id === nextCategoryId);
-    if (nextCategoryId && cleaned && cat) {
+    if (
+      nextCategoryId &&
+      cleaned &&
+      cat &&
+      cat.name !== REVIEW_CATEGORY
+    ) {
       setRememberPrompt({
         txId: tx.id,
         merchant: cleaned,
@@ -140,6 +182,16 @@ export default function TransactionsPage() {
       });
     } else {
       setRememberPrompt(null);
+    }
+
+    if (needsReview) {
+      const stillQueued =
+        !nextCategoryId ||
+        cat?.name === REVIEW_CATEGORY ||
+        cat?.name === OTHER_CATEGORY;
+      if (!stillQueued) {
+        setTransactions((prev) => prev.filter((t) => t.id !== tx.id));
+      }
     }
   }
 
@@ -161,16 +213,18 @@ export default function TransactionsPage() {
   }
 
   const filterDescription = [
-    formatMonthLabel(month),
+    needsReview ? "Last 90 days" : formatMonthLabel(month),
     ledger === "personal" ? "Personal" : "Business",
     accountId
       ? accounts.find((a) => a.id === accountId)?.name
       : null,
-    categoryId === "none"
-      ? "Uncategorized"
-      : categoryId
-        ? categories.find((c) => c.id === categoryId)?.name
-        : null,
+    needsReview
+      ? "Needs review"
+      : categoryId === "none"
+        ? "Uncategorized"
+        : categoryId
+          ? categories.find((c) => c.id === categoryId)?.name
+          : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -182,17 +236,19 @@ export default function TransactionsPage() {
         description={filterDescription}
         actions={
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <Select
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              aria-label="Month"
-            >
-              {MONTH_OPTIONS.map((m) => (
-                <option key={m} value={m}>
-                  {formatMonthLabel(m)}
-                </option>
-              ))}
-            </Select>
+            {!needsReview ? (
+              <Select
+                value={month}
+                onChange={(e) => setMonth(e.target.value)}
+                aria-label="Month"
+              >
+                {MONTH_OPTIONS.map((m) => (
+                  <option key={m} value={m}>
+                    {formatMonthLabel(m)}
+                  </option>
+                ))}
+              </Select>
+            ) : null}
             <Select
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
@@ -207,13 +263,22 @@ export default function TransactionsPage() {
               ))}
             </Select>
             <Select
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
+              value={needsReview ? "needsReview" : categoryId}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "needsReview") {
+                  setNeedsReviewFilter(true);
+                } else {
+                  setNeedsReviewFilter(false);
+                  setCategoryId(v);
+                }
+              }}
               aria-label="Category"
             >
               <option value="">All categories</option>
+              <option value="needsReview">Needs review</option>
               <option value="none">Uncategorized</option>
-              {categories.map((c) => (
+              {sortedCategories.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
@@ -252,10 +317,7 @@ export default function TransactionsPage() {
       {loading && transactions.length === 0 ? (
         <p className="text-[var(--muted)]">Loading…</p>
       ) : transactions.length === 0 ? (
-        <EmptyState
-          title="No transactions match"
-          description="Try another month, account, or category — or sync after connecting a bank."
-        />
+        <EmptyState title="No transactions" />
       ) : (
         <Card className="overflow-x-auto p-0">
           <table className="w-full min-w-[640px] text-left text-sm">
@@ -293,7 +355,7 @@ export default function TransactionsPage() {
                       onChange={(e) => void onCategoryChange(tx, e.target.value)}
                     >
                       <option value="">Uncategorized</option>
-                      {categories.map((c) => (
+                      {sortedCategories.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.name}
                         </option>
@@ -325,5 +387,13 @@ export default function TransactionsPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+export default function TransactionsPage() {
+  return (
+    <Suspense fallback={<p className="text-[var(--muted)]">Loading…</p>}>
+      <TransactionsPageInner />
+    </Suspense>
   );
 }

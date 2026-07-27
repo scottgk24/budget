@@ -13,7 +13,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { formatCompactCurrency, formatCurrency } from "@/lib/format";
+import { useMoneyFormat } from "@/components/privacy-context";
 
 export type MetricsPoint = {
   key: string;
@@ -55,6 +55,7 @@ function ChartTooltip({
   payload?: Array<{ name: string; value: number; color: string }>;
   label?: string;
 }) {
+  const { formatCurrency } = useMoneyFormat();
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm shadow-sm">
@@ -64,7 +65,6 @@ function ChartTooltip({
           {p.name}: {formatCurrency(p.value)}
         </p>
       ))}
-      <p className="mt-1 text-xs text-[var(--muted)]">Click to break down</p>
     </div>
   );
 }
@@ -102,6 +102,7 @@ export function SpendIncomeChart({
   incomeLabel = "Income",
   spendLabel = "Spend",
 }: ChartProps) {
+  const { formatCompactCurrency } = useMoneyFormat();
   const hasData = data.some((d) => d.spend > 0 || d.income > 0);
 
   if (!hasData) {
@@ -183,6 +184,7 @@ export function SavingsChart({
   savingsLabel = "Savings",
   emptyLabel = "No savings data in this period yet.",
 }: ChartProps) {
+  const { formatCompactCurrency } = useMoneyFormat();
   const hasData = data.some((d) => d.spend > 0 || d.income > 0);
 
   if (!hasData) {
@@ -240,6 +242,7 @@ export function SavingsChart({
 }
 
 export function BalanceChart({ data, onSelectPeriod, selectedKey }: ChartProps) {
+  const { formatCompactCurrency } = useMoneyFormat();
   const series = data.map((d) => ({ ...d, balance: d.balance ?? 0 }));
   const hasData = series.some((d) => d.balance !== 0 || d.spend > 0 || d.income > 0);
 

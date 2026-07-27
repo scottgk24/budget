@@ -1,11 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useId, useState } from "react";
+import { useMoneyFormat } from "@/components/privacy-context";
 import { Button } from "@/components/ui";
 import {
-  formatCurrency,
   formatDate,
-  formatSignedCurrency,
   periodBounds,
   toDateParam,
   type MetricsGranularity,
@@ -66,6 +65,7 @@ export function PeriodDrilldown({
 }) {
   const titleId = useId();
   const copy = ledgerCopy(ledger);
+  const { formatCurrency, formatSignedCurrency } = useMoneyFormat();
   const [view, setView] = useState<View>("categories");
   const [summary, setSummary] = useState<PeriodSummary | null>(null);
   const [category, setCategory] = useState<SelectedCategory | null>(null);
@@ -205,11 +205,9 @@ export function PeriodDrilldown({
                   : "All transactions"
                 : (summary?.label ?? "Period")}
             </h2>
-            <p className="mt-0.5 text-sm text-[var(--muted)]">
-              {view === "transactions"
-                ? summary?.label
-                : "Click a category to see transactions"}
-            </p>
+            {view === "transactions" && summary?.label ? (
+              <p className="mt-0.5 text-sm text-[var(--muted)]">{summary.label}</p>
+            ) : null}
           </div>
           <Button type="button" variant="ghost" className="shrink-0 px-2" onClick={onClose}>
             Close

@@ -84,10 +84,7 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Settings"
-        description="Workspace access and preferences"
-      />
+      <PageHeader title="Settings" />
 
       {error ? <p className="mb-4 text-sm text-[var(--danger)]">{error}</p> : null}
 
@@ -119,11 +116,6 @@ export default function SettingsPage() {
           <h2 className="font-display text-lg">
             Invite collaborators
           </h2>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            Invite-only access. Share the link with a partner, bookkeeper, or anyone
-            who should see the workspace. You can also restrict sign-in with{" "}
-            <code>ALLOWED_EMAILS</code> in env.
-          </p>
 
           {role === "owner" ? (
             <form onSubmit={sendInvite} className="mt-4 flex flex-wrap gap-2">
@@ -141,13 +133,13 @@ export default function SettingsPage() {
             </form>
           ) : (
             <p className="mt-4 text-sm text-[var(--muted)]">
-              Only workspace owners can send invites.
+              Only owners can send invites.
             </p>
           )}
 
           {inviteLink ? (
             <div className="mt-4 rounded-lg bg-[var(--accent-soft)] p-3 text-sm">
-              <p className="font-medium">Invite link (copy and share):</p>
+              <p className="font-medium">Invite link</p>
               <p className="mt-1 break-all">{inviteLink}</p>
             </div>
           ) : null}
@@ -178,21 +170,6 @@ export default function SettingsPage() {
               ))}
             </ul>
           ) : null}
-        </Card>
-
-        <Card className="lg:col-span-2">
-          <h2 className="font-display text-lg">Security</h2>
-          <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-[var(--muted)]">
-            <li>Bank logins happen in Plaid Link (OAuth) — we never store passwords.</li>
-            <li>Plaid access tokens are encrypted at rest with TOKEN_ENCRYPTION_KEY.</li>
-            <li>Webhooks are verified with Plaid JWT signatures.</li>
-            <li>This app is read-only: no transfers or bill pay.</li>
-            <li>Any member can link or disconnect banks; owners manage invites.</li>
-            <li>
-              Production: set ALLOWED_EMAILS, Clerk invite-only, Postgres, and a unique
-              TOKEN_ENCRYPTION_KEY.
-            </li>
-          </ul>
         </Card>
       </div>
     </div>

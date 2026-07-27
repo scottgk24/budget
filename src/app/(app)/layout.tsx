@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { LedgerProvider } from "@/components/ledger-context";
+import { PrivacyProvider } from "@/components/privacy-context";
 import { AuthError, getWorkspaceContext } from "@/lib/auth";
 
 export default async function AppLayout({
@@ -20,7 +21,9 @@ export default async function AppLayout({
 
   return (
     <LedgerProvider>
-      <AppShell>{children}</AppShell>
+      <PrivacyProvider>
+        <AppShell>{children}</AppShell>
+      </PrivacyProvider>
     </LedgerProvider>
   );
 }

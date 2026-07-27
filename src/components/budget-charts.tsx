@@ -1,7 +1,7 @@
 "use client";
 
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
-import { formatCurrency } from "@/lib/format";
+import { useMoneyFormat } from "@/components/privacy-context";
 
 export type CategorySlice = {
   id: string;
@@ -32,6 +32,7 @@ function PieTooltip({
   active?: boolean;
   payload?: Array<{ name: string; value: number; payload: CategorySlice & { pct: number } }>;
 }) {
+  const { formatCurrency } = useMoneyFormat();
   if (!active || !payload?.length) return null;
   const row = payload[0];
   return (

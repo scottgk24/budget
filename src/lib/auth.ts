@@ -234,8 +234,10 @@ export async function ensureUserAndWorkspace(options?: { inviteToken?: string })
 /** Request-scoped workspace lookup (dedupes within a single server render). */
 export const getWorkspaceContext = cache(async () => ensureUserAndWorkspace());
 
-/** Insert missing default categories. Returns how many rows were created. */
-export async function seedDefaultCategories(workspaceId: string): Promise<number> {
+/** Insert any missing default category names (no budget migrations). */
+export async function ensureMissingDefaultCategories(
+  workspaceId: string,
+): Promise<number> {
   const desired = [
     ...defaultCategoriesForLedger("personal").map((name) => ({
       workspaceId,
@@ -255,16 +257,23 @@ export async function seedDefaultCategories(workspaceId: string): Promise<number
 
   const existing = await prisma.category.findMany({
     where: { workspaceId },
-    select: { id: true, name: true, ledger: true, budgetPeriod: true },
+    select: { name: true, ledger: true },
   });
   const have = new Set(existing.map((c) => `${c.ledger}:${c.name}`));
   const missing = desired.filter((c) => !have.has(`${c.ledger}:${c.name}`));
+  if (missing.length === 0) return 0;
+  const result = await prisma.category.createMany({ data: missing });
+  return result.count;
+}
 
-  let created = 0;
-  if (missing.length > 0) {
-    const result = await prisma.category.createMany({ data: missing });
-    created = result.count;
-  }
+/** Insert missing default categories. Returns how many rows were created. */
+export async function seedDefaultCategories(workspaceId: string): Promise<number> {
+  const created = await ensureMissingDefaultCategories(workspaceId);
+
+  const existing = await prisma.category.findMany({
+    where: { workspaceId },
+    select: { id: true, name: true, ledger: true, budgetPeriod: true },
+  });
 
   // Align lumpy defaults to annual even if they already existed as monthly.
   const toAnnual = existing.filter((c) => {

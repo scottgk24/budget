@@ -7,6 +7,18 @@ import type { Prisma } from "@prisma/client";
  */
 export const TRANSFER_CATEGORY = "Transfers";
 
+/** Manual parking category — needs a human, never auto-mapped from Plaid. */
+export const REVIEW_CATEGORY = "Review";
+
+/** Catch-all from Plaid mapping; included in the review queue. */
+export const OTHER_CATEGORY = "Other";
+
+/** Categories that surface in the review-queue notification widget. */
+export const REVIEW_QUEUE_CATEGORY_NAMES = [
+  REVIEW_CATEGORY,
+  OTHER_CATEGORY,
+] as const;
+
 /** Positive amounts here are not consumption (and Income is never spend). */
 export const NON_SPEND_CATEGORIES = [TRANSFER_CATEGORY, "Income"] as const;
 
@@ -57,6 +69,7 @@ export const PERSONAL_CATEGORIES = [
   "Income",
   "Transfers",
   "Other",
+  REVIEW_CATEGORY,
 ] as const;
 
 /** Categories that default to a yearly budget (lumpy spend). */
@@ -110,6 +123,7 @@ export const BUSINESS_CATEGORIES = [
   "Income",
   "Transfers",
   "Other",
+  REVIEW_CATEGORY,
 ] as const;
 
 export type CategorySource = "plaid" | "rule" | "user";

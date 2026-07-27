@@ -6,6 +6,8 @@ import { UserButton } from "@clerk/nextjs";
 import { useEffect, useState, type ReactNode, type SVGProps } from "react";
 import { BrandMark } from "@/components/brand-mark";
 import { useLedger } from "@/components/ledger-context";
+import { usePrivacy } from "@/components/privacy-context";
+import { ReviewQueueWidget } from "@/components/review-queue-widget";
 import { cn } from "@/lib/format";
 import { ledgerCopy } from "@/lib/ledger-copy";
 
@@ -92,6 +94,45 @@ function IconClose(props: SVGProps<SVGSVGElement>) {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden {...props} className={iconClass(props.className)}>
       <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
     </svg>
+  );
+}
+
+function IconEye(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden {...props} className={iconClass(props.className)}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" />
+      <circle cx="12" cy="12" r="2.75" />
+    </svg>
+  );
+}
+
+function IconEyeOff(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden {...props} className={iconClass(props.className)}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.5 3.5l17 17" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.9 5.2A10.4 10.4 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a16.6 16.6 0 0 1-3.2 3.6M6.1 6.6A16.3 16.3 0 0 0 2.5 12S6 18.5 12 18.5c1.4 0 2.7-.3 3.9-.8" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.9 9.9a2.75 2.75 0 0 0 3.9 3.9" />
+    </svg>
+  );
+}
+
+function PrivacyToggleButton({ className }: { className?: string }) {
+  const { hidden, toggleHidden } = usePrivacy();
+  return (
+    <button
+      type="button"
+      onClick={toggleHidden}
+      className={cn(
+        "rounded-md p-2 text-[var(--muted)] transition-colors hover:bg-[var(--accent-soft)] hover:text-[var(--fg)]",
+        hidden && "text-[var(--gold)]",
+        className,
+      )}
+      aria-label={hidden ? "Show amounts" : "Hide amounts"}
+      aria-pressed={hidden}
+      title={hidden ? "Show amounts" : "Hide amounts"}
+    >
+      {hidden ? <IconEyeOff /> : <IconEye />}
+    </button>
   );
 }
 
@@ -208,7 +249,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
             <BrandMark variant="mark" href="/dashboard" className="h-8 w-auto" />
           </div>
-          <UserButton />
+          <div className="flex items-center gap-1">
+            <ReviewQueueWidget />
+            <PrivacyToggleButton />
+            <UserButton />
+          </div>
         </header>
 
         <main className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 sm:py-8">
@@ -369,10 +414,19 @@ function SidebarPanel({
         )}
 
         {!showCloseMobile ? (
-          <div className={cn("flex items-center", collapsed ? "justify-center" : "px-1")}>
+          <div className={cn("flex items-center gap-1", collapsed ? "flex-col" : "justify-between px-1")}>
+            <div className={cn("flex items-center gap-1", collapsed && "flex-col")}>
+              <ReviewQueueWidget collapsed={collapsed} />
+              <PrivacyToggleButton />
+            </div>
             <UserButton />
           </div>
-        ) : null}
+        ) : (
+          <div className={cn("flex items-center gap-1", collapsed ? "justify-center" : "px-1")}>
+            <ReviewQueueWidget collapsed={collapsed} />
+            <PrivacyToggleButton />
+          </div>
+        )}
       </div>
     </div>
   );

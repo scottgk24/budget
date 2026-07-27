@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
-import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
+import {
+  AuthError,
+  ensureMissingDefaultCategories,
+  ensureUserAndWorkspace,
+} from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
 export async function GET(req: Request) {
   try {
     const { workspace } = await ensureUserAndWorkspace();
+    await ensureMissingDefaultCategories(workspace.id);
     const { searchParams } = new URL(req.url);
     const ledger = searchParams.get("ledger") as "personal" | "business" | null;
 
