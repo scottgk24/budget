@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { z } from "zod";
-import { ensureUserAndWorkspace } from "@/lib/auth";
+import { assertNotDemo, ensureUserAndWorkspace } from "@/lib/auth";
 import { handleApiError, rateLimitedResponse } from "@/lib/api-response";
 import { prisma } from "@/lib/db";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 
 export async function GET() {
   try {
-    const { workspace, membership } = await ensureUserAndWorkspace();
+    const { workspace, membership, isDemo } = await ensureUserAndWorkspace();
+    assertNotDemo(isDemo);
 
     const members = await prisma.membership.findMany({
       where: { workspaceId: workspace.id },
@@ -51,7 +52,8 @@ export async function POST(req: Request) {
     const limited = rateLimit(`invite-create:${clientIp(req)}`, 10, 60_000);
     if (!limited.ok) return rateLimitedResponse(limited.retryAfter);
 
-    const { user, workspace, membership } = await ensureUserAndWorkspace();
+    const { user, workspace, membership, isDemo } = await ensureUserAndWorkspace();
+    assertNotDemo(isDemo);
     if (membership.role !== "owner") {
       return NextResponse.json({ error: "Only owners can invite members" }, { status: 403 });
     }
@@ -110,7 +112,8 @@ const revokeSchema = z.object({
 
 export async function DELETE(req: Request) {
   try {
-    const { workspace, membership } = await ensureUserAndWorkspace();
+    const { workspace, membership, isDemo } = await ensureUserAndWorkspace();
+    assertNotDemo(isDemo);
     if (membership.role !== "owner") {
       return NextResponse.json({ error: "Only owners can revoke invites" }, { status: 403 });
     }

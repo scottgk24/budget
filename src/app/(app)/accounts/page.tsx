@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useLedger } from "@/components/ledger-context";
 import { PlaidLinkButton } from "@/components/plaid-link-button";
 import { useMoneyFormat } from "@/components/privacy-context";
+import { useAppBasePath } from "@/components/use-app-base-path";
 import { Button, Card, EmptyState, PageHeader, Select } from "@/components/ui";
 import { signedAccountBalance } from "@/lib/accounts";
 import { formatDate } from "@/lib/format";
@@ -39,6 +40,7 @@ type Item = {
 
 export default function AccountsPage() {
   const { ledger } = useLedger();
+  const { isDemo } = useAppBasePath();
   const copy = ledgerCopy(ledger);
   const { formatCurrency } = useMoneyFormat();
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -134,13 +136,21 @@ export default function AccountsPage() {
       <PageHeader
         title="Accounts"
         actions={
-          plaidConfigured ? (
+          !isDemo && plaidConfigured ? (
             <PlaidLinkButton ledger={ledger} onSuccess={() => void load()} />
           ) : null
         }
       />
 
-      {!plaidConfigured ? (
+      {isDemo ? (
+        <Card className="mb-6 border-[var(--border)] bg-[color-mix(in_srgb,var(--gold)_8%,var(--surface))]">
+          <p className="font-medium">Sample accounts</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            These institutions are fictional demo data. Linking real banks is
+            available after you create an account.
+          </p>
+        </Card>
+      ) : !plaidConfigured ? (
         <Card className="mb-6 border-amber-300 bg-amber-50">
           <p className="font-medium">Plaid not configured</p>
           <p className="mt-1 text-sm text-[var(--muted)]">
@@ -157,7 +167,7 @@ export default function AccountsPage() {
           title="No linked accounts"
           description={copy.accountsEmpty}
           action={
-            plaidConfigured ? (
+            !isDemo && plaidConfigured ? (
               <PlaidLinkButton ledger={ledger} onSuccess={() => void load()} />
             ) : undefined
           }
@@ -232,23 +242,25 @@ export default function AccountsPage() {
                           : ""}
                       </p>
                     </div>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        disabled={syncing === item.id}
-                        onClick={() => void syncItem(item.id)}
-                      >
-                        {syncing === item.id ? "Syncing…" : "Sync"}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        onClick={() => void disconnect(item.id)}
-                      >
-                        Disconnect
-                      </Button>
-                    </div>
+                    {!isDemo ? (
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={syncing === item.id}
+                          onClick={() => void syncItem(item.id)}
+                        >
+                          {syncing === item.id ? "Syncing…" : "Sync"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => void disconnect(item.id)}
+                        >
+                          Disconnect
+                        </Button>
+                      </div>
+                    ) : null}
                   </li>
                 ))}
               </ul>

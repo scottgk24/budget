@@ -48,6 +48,12 @@ export default async function HomePage() {
         <BrandMark variant="mark" href="/" />
         <div className="flex items-center gap-2">
           <Show when="signed-out">
+            <Link
+              href="/api/demo"
+              className="rounded-lg px-3 py-1.5 text-sm text-[var(--muted)] transition hover:text-[var(--fg)]"
+            >
+              Demo
+            </Link>
             <SignInButton mode="modal">
               <button
                 type="button"
@@ -90,10 +96,16 @@ export default async function HomePage() {
                   Create account
                 </button>
               </SignUpButton>
+              <Link
+                href="/api/demo"
+                className="rounded-lg border border-[var(--border)] bg-[color-mix(in_srgb,var(--surface)_70%,transparent)] px-6 py-3 text-sm font-medium text-[var(--fg)] backdrop-blur-sm transition hover:border-[var(--gold)]"
+              >
+                Try the demo
+              </Link>
               <SignInButton mode="modal">
                 <button
                   type="button"
-                  className="rounded-lg border border-[var(--border)] bg-[color-mix(in_srgb,var(--surface)_70%,transparent)] px-6 py-3 text-sm font-medium text-[var(--fg)] backdrop-blur-sm transition hover:border-[var(--gold)]"
+                  className="rounded-lg px-6 py-3 text-sm font-medium text-[var(--muted)] transition hover:text-[var(--fg)]"
                 >
                   Sign in
                 </button>
@@ -109,8 +121,8 @@ export default async function HomePage() {
             </Show>
           </div>
           <p className="sage-rise sage-rise-delay-3 mt-8 text-sm text-[var(--muted)]">
-            Invite-only. Bank credentials stay with Plaid — we never see your
-            passwords.
+            Invite-only for real workspaces. Explore the full app with sample
+            data in the demo — no account needed.
           </p>
         </div>
 

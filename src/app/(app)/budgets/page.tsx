@@ -295,10 +295,30 @@ export default function BudgetsPage() {
       }, 0),
     [rows, drafts],
   );
-  const totalSpent = useMemo(
+
+  /** Cash that actually left accounts this month (can spike on annual bills). */
+  const cashSpentThisMonth = useMemo(
     () => rows.reduce((sum, c) => sum + (spentByCategory[c.id] ?? 0), 0),
     [rows, spentByCategory],
   );
+
+  /**
+   * Monthly-comparable spend: annual categories use YTD÷12 so a yearly Insurance
+   * charge doesn't blow up the month vs budgeted (also yearly÷12).
+   */
+  const totalSpent = useMemo(
+    () =>
+      rows.reduce((sum, c) => {
+        if (isAnnual(c)) {
+          return sum + monthlyAllotment(spentYtdByCategory[c.id] ?? 0);
+        }
+        return sum + (spentByCategory[c.id] ?? 0);
+      }, 0),
+    [rows, spentByCategory, spentYtdByCategory],
+  );
+
+  const cashDiffersFromMonthly = Math.abs(cashSpentThisMonth - totalSpent) >= 1;
+
   const budgetSlices = useMemo(
     () =>
       rows
@@ -319,10 +339,12 @@ export default function BudgetsPage() {
         .map((c) => ({
           id: c.id,
           name: c.name,
-          value: spentByCategory[c.id] ?? 0,
+          value: isAnnual(c)
+            ? monthlyAllotment(spentYtdByCategory[c.id] ?? 0)
+            : (spentByCategory[c.id] ?? 0),
         }))
         .filter((s) => s.value > 0),
-    [rows, spentByCategory],
+    [rows, spentByCategory, spentYtdByCategory],
   );
 
   const allExpanded = rows.length > 0 && rows.every((c) => expanded.has(c.id));
@@ -425,6 +447,15 @@ export default function BudgetsPage() {
               <p className="mt-2 font-display text-2xl tabular-nums">
                 {formatCurrency(totalSpent)}
               </p>
+              {cashDiffersFromMonthly ? (
+                <p
+                  className="mt-1 text-xs text-[var(--muted)]"
+                  title="Annual categories are counted as year-to-date ÷ 12 so lumpy bills match the monthly budget view."
+                >
+                  Cash out {formatCurrency(cashSpentThisMonth)}
+                  <span className="text-[var(--muted)]/80"> · annual smoothed</span>
+                </p>
+              ) : null}
             </Card>
             <Card>
               <p className="text-sm text-[var(--muted)]">{copy.remaining}</p>
@@ -439,6 +470,11 @@ export default function BudgetsPage() {
                   ? formatCurrency(totalBudgeted - totalSpent)
                   : "—"}
               </p>
+              {cashDiffersFromMonthly ? (
+                <p className="mt-1 text-xs text-[var(--muted)]">
+                  vs monthly view
+                </p>
+              ) : null}
             </Card>
           </div>
 
@@ -456,6 +492,11 @@ export default function BudgetsPage() {
               <h2 className="mb-3 font-display text-lg">
                 {copy.spendMix}
               </h2>
+              {cashDiffersFromMonthly ? (
+                <p className="mb-2 text-xs text-[var(--muted)]">
+                  Annual categories use YTD ÷ 12
+                </p>
+              ) : null}
               <CategoryPieChart
                 data={spendSlices}
                 emptyLabel="Nothing here yet"
@@ -560,7 +601,7 @@ export default function BudgetsPage() {
                         </div>
                         <div className="min-w-0 text-right">
                           <p className="mb-0.5 text-[10px] uppercase tracking-wide text-[var(--muted)] sm:hidden">
-                            Actual
+                            Actual{annual ? " YTD" : ""}
                           </p>
                           <p
                             className={cn(
@@ -570,6 +611,14 @@ export default function BudgetsPage() {
                           >
                             {formatCurrency(progressSpent)}
                           </p>
+                          {annual && monthSpent > 0 ? (
+                            <p
+                              className="text-[10px] tabular-nums text-[var(--muted)]"
+                              title="Charged this month"
+                            >
+                              This mo. {formatCurrency(monthSpent)}
+                            </p>
+                          ) : null}
                         </div>
                         <div className="min-w-0 text-right">
                           <p className="mb-0.5 text-[10px] uppercase tracking-wide text-[var(--muted)] sm:hidden">
@@ -651,6 +700,23 @@ export default function BudgetsPage() {
                             <span className="text-xs text-[var(--muted)]">Saving…</span>
                           ) : null}
                         </div>
+
+                        {annual ? (
+                          <div className="grid gap-2 text-[11px] tabular-nums text-[var(--muted)] sm:grid-cols-2">
+                            <div className="flex items-baseline justify-between gap-2 rounded-md border border-[var(--border)]/50 px-2.5 py-2">
+                              <span>This month</span>
+                              <span className="text-[var(--fg)]">
+                                {formatCurrency(monthSpent)}
+                              </span>
+                            </div>
+                            <div className="flex items-baseline justify-between gap-2 rounded-md border border-[var(--border)]/50 px-2.5 py-2">
+                              <span>Monthly share</span>
+                              <span className="text-[var(--fg)]">
+                                {formatCurrency(monthlyAllotment(ytdSpent))}
+                              </span>
+                            </div>
+                          </div>
+                        ) : null}
 
                         {budgetAmt > 0 ? (
                           <div>

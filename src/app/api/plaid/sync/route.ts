@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { ensureUserAndWorkspace } from "@/lib/auth";
+import { assertNotDemo, ensureUserAndWorkspace } from "@/lib/auth";
 import { handleApiError, rateLimitedResponse } from "@/lib/api-response";
 import { prisma } from "@/lib/db";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
@@ -20,7 +20,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Plaid is not configured" }, { status: 503 });
     }
 
-    const { workspace } = await ensureUserAndWorkspace();
+    const { workspace, isDemo } = await ensureUserAndWorkspace();
+    assertNotDemo(isDemo);
     const body = bodySchema.parse(await req.json());
 
     const item = await prisma.plaidItem.findFirst({

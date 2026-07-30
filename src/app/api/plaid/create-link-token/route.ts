@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { ensureUserAndWorkspace } from "@/lib/auth";
+import { assertNotDemo, ensureUserAndWorkspace } from "@/lib/auth";
 import { handleApiError, rateLimitedResponse } from "@/lib/api-response";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import {
@@ -30,7 +30,8 @@ export async function POST(req: Request) {
       );
     }
 
-    const { user, workspace } = await ensureUserAndWorkspace();
+    const { user, workspace, isDemo } = await ensureUserAndWorkspace();
+    assertNotDemo(isDemo);
     const json = await req.json().catch(() => ({}));
     bodySchema.parse(json);
 

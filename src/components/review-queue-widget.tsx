@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useLedger } from "@/components/ledger-context";
 import { useMoneyFormat } from "@/components/privacy-context";
+import { useAppBasePath } from "@/components/use-app-base-path";
 import { cn, formatDate } from "@/lib/format";
 
 type ReviewReason = "review" | "uncategorized" | "other";
@@ -57,6 +58,7 @@ export function ReviewQueueWidget({
   collapsed?: boolean;
 }) {
   const { ledger } = useLedger();
+  const { href: appHref } = useAppBasePath();
   const { formatSignedCurrency } = useMoneyFormat();
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<ReviewQueueData | null>(null);
@@ -106,7 +108,7 @@ export function ReviewQueueWidget({
   }, [open]);
 
   const total = data?.total ?? 0;
-  const viewAllHref = `/transactions?needsReview=1`;
+  const viewAllHref = appHref("/transactions?needsReview=1");
 
   return (
     <div ref={rootRef} className="relative">

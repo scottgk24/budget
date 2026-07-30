@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 import { useEffect, useState, type ReactNode, type SVGProps } from "react";
 import { BrandMark } from "@/components/brand-mark";
 import { useLedger } from "@/components/ledger-context";
 import { usePrivacy } from "@/components/privacy-context";
 import { ReviewQueueWidget } from "@/components/review-queue-widget";
+import { useAppBasePath } from "@/components/use-app-base-path";
 import { cn } from "@/lib/format";
 import { ledgerCopy } from "@/lib/ledger-copy";
 
@@ -68,6 +69,15 @@ function IconSettings(props: SVGProps<SVGSVGElement>) {
         strokeLinejoin="round"
         d="M12 3.5v1.6M12 18.9v1.6M4.9 6.5l1.15 1.15M17.95 16.35l1.15 1.15M3.5 12h1.6M18.9 12h1.6M4.9 17.5l1.15-1.15M17.95 7.65l1.15-1.15"
       />
+    </svg>
+  );
+}
+
+function IconExit(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden {...props} className={iconClass(props.className)}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10 5H6.5A1.5 1.5 0 0 0 5 6.5v11A1.5 1.5 0 0 0 6.5 19H10" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14 12H9m5 0 2.5-2.5M14 12l2.5 2.5" />
     </svg>
   );
 }
@@ -140,16 +150,49 @@ const NAV: Array<{
   href: string;
   icon: NavIcon;
   label: (copy: ReturnType<typeof ledgerCopy>) => string;
+  demo?: boolean;
 }> = [
-  { href: "/dashboard", icon: IconDashboard, label: (c) => c.navDashboard },
-  { href: "/transactions", icon: IconTransactions, label: () => "Transactions" },
-  { href: "/budgets", icon: IconBudgets, label: (c) => c.navBudgets },
-  { href: "/accounts", icon: IconAccounts, label: () => "Accounts" },
+  { href: "/dashboard", icon: IconDashboard, label: (c) => c.navDashboard, demo: true },
+  { href: "/transactions", icon: IconTransactions, label: () => "Transactions", demo: true },
+  { href: "/budgets", icon: IconBudgets, label: (c) => c.navBudgets, demo: true },
+  { href: "/accounts", icon: IconAccounts, label: () => "Accounts", demo: true },
   { href: "/settings", icon: IconSettings, label: () => "Settings" },
 ];
 
+function ExitDemoButton({ collapsed }: { collapsed?: boolean }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+
+  async function exitDemo() {
+    setBusy(true);
+    try {
+      await fetch("/api/demo", { method: "DELETE" });
+    } finally {
+      router.push("/");
+      router.refresh();
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => void exitDemo()}
+      disabled={busy}
+      className={cn(
+        "rounded-md text-[var(--muted)] transition-colors hover:bg-[var(--accent-soft)] hover:text-[var(--fg)]",
+        collapsed ? "p-2" : "px-2 py-1.5 text-xs font-medium",
+      )}
+      aria-label="Exit demo"
+      title="Exit demo"
+    >
+      {collapsed ? <IconExit /> : busy ? "Leaving…" : "Exit demo"}
+    </button>
+  );
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { isDemo, href: appHref } = useAppBasePath();
   const { ledger, setLedger } = useLedger();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -197,6 +240,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       onToggleCollapsed={toggleCollapsed}
       onCloseMobile={() => setMobileOpen(false)}
       showCloseMobile
+      isDemo={isDemo}
+      appHref={appHref}
     />
   );
 
@@ -217,6 +262,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           setLedger={setLedger}
           onToggleCollapsed={toggleCollapsed}
           showCloseMobile={false}
+          isDemo={isDemo}
+          appHref={appHref}
         />
       </aside>
 
@@ -247,14 +294,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               <IconMenu />
             </button>
-            <BrandMark variant="mark" href="/dashboard" className="h-8 w-auto" />
+            <BrandMark variant="mark" href={appHref("/dashboard")} className="h-8 w-auto" />
           </div>
           <div className="flex items-center gap-1">
             <ReviewQueueWidget />
             <PrivacyToggleButton />
-            <UserButton />
+            {isDemo ? <ExitDemoButton /> : <UserButton />}
           </div>
         </header>
+
+        {isDemo ? (
+          <div className="shrink-0 border-b border-[var(--border)] bg-[color-mix(in_srgb,var(--gold)_12%,var(--surface))] px-4 py-2 text-center text-xs text-[var(--muted)] sm:px-6">
+            You’re exploring a demo with sample data.{" "}
+            <Link href="/" className="font-medium text-[var(--gold)] hover:underline">
+              Sign up
+            </Link>{" "}
+            for a real workspace — bank linking and invites stay off here.
+          </div>
+        ) : null}
 
         <main className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 sm:py-8">
           <div className="mx-auto w-full max-w-7xl">{children}</div>
@@ -273,6 +330,8 @@ function SidebarPanel({
   onToggleCollapsed,
   onCloseMobile,
   showCloseMobile,
+  isDemo,
+  appHref,
 }: {
   pathname: string;
   collapsed: boolean;
@@ -282,8 +341,11 @@ function SidebarPanel({
   onToggleCollapsed: () => void;
   onCloseMobile?: () => void;
   showCloseMobile: boolean;
+  isDemo: boolean;
+  appHref: (path: string) => string;
 }) {
   const copy = ledgerCopy(ledger);
+  const navItems = NAV.filter((item) => !isDemo || item.demo);
   return (
     <div className="flex h-full flex-col">
       <div
@@ -294,7 +356,7 @@ function SidebarPanel({
       >
         <BrandMark
           variant="mark"
-          href="/dashboard"
+          href={appHref("/dashboard")}
           className={collapsed ? "h-8 w-auto" : "h-9 w-auto"}
         />
 
@@ -324,14 +386,16 @@ function SidebarPanel({
       </div>
 
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
-        {NAV.map((item) => {
-          const active = pathname.startsWith(item.href);
+        {navItems.map((item) => {
+          const itemHref = appHref(item.href);
+          const active =
+            pathname === itemHref || pathname.startsWith(`${itemHref}/`);
           const Icon = item.icon;
           const label = item.label(copy);
           return (
             <Link
               key={item.href}
-              href={item.href}
+              href={itemHref}
               title={collapsed ? label : undefined}
               aria-label={collapsed ? label : undefined}
               className={cn(
@@ -419,12 +483,13 @@ function SidebarPanel({
               <ReviewQueueWidget collapsed={collapsed} />
               <PrivacyToggleButton />
             </div>
-            <UserButton />
+            {isDemo ? <ExitDemoButton collapsed={collapsed} /> : <UserButton />}
           </div>
         ) : (
           <div className={cn("flex items-center gap-1", collapsed ? "justify-center" : "px-1")}>
             <ReviewQueueWidget collapsed={collapsed} />
             <PrivacyToggleButton />
+            {isDemo ? <ExitDemoButton collapsed={collapsed} /> : null}
           </div>
         )}
       </div>

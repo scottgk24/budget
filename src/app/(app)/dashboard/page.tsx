@@ -7,6 +7,7 @@ import { useLedger } from "@/components/ledger-context";
 import type { MetricsPoint } from "@/components/metrics-charts";
 import { PeriodDrilldown } from "@/components/period-drilldown";
 import { useMoneyFormat } from "@/components/privacy-context";
+import { useAppBasePath } from "@/components/use-app-base-path";
 import { Button, Card, EmptyState, PageHeader, Select } from "@/components/ui";
 import {
   formatDate,
@@ -90,6 +91,7 @@ const PERIODS: Array<{ id: MetricsGranularity; label: string }> = [
 
 export default function DashboardPage() {
   const { ledger } = useLedger();
+  const { href: appHref } = useAppBasePath();
   const copy = ledgerCopy(ledger);
   const { formatCurrency, formatSignedCurrency } = useMoneyFormat();
   const [data, setData] = useState<DashboardData | null>(null);
@@ -174,7 +176,7 @@ export default function DashboardPage() {
           description={copy.emptyAccountsDescription}
           action={
             <Link
-              href="/accounts"
+              href={appHref("/accounts")}
               className="rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--on-accent)]"
             >
               Go to Accounts
@@ -368,7 +370,7 @@ export default function DashboardPage() {
                 <h2 className="font-display text-lg">
                   {copy.topCategories}
                 </h2>
-                <Link href="/budgets" className="text-sm text-[var(--accent)]">
+                <Link href={appHref("/budgets")} className="text-sm text-[var(--accent)]">
                   {copy.budgetsLink}
                 </Link>
               </div>
@@ -421,7 +423,7 @@ export default function DashboardPage() {
                 <h2 className="font-display text-lg">
                   Recent activity
                 </h2>
-                <Link href="/transactions" className="text-sm text-[var(--accent)]">
+                <Link href={appHref("/transactions")} className="text-sm text-[var(--accent)]">
                   All
                 </Link>
               </div>

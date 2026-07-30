@@ -6,6 +6,8 @@ import {
   defaultBudgetPeriodForName,
   defaultCategoriesForLedger,
 } from "@/lib/categories";
+import { ensureDemoWorkspace, isDemoRequest } from "@/lib/demo";
+import { isClerkConfigured } from "@/lib/env";
 import { monthKey, yearKey } from "@/lib/format";
 import { isProductionRuntime } from "@/lib/runtime";
 
@@ -39,11 +41,27 @@ export function isEmailAllowed(email: string): boolean {
 }
 
 export async function requireAuth() {
+  if (!isClerkConfigured()) {
+    if (await isDemoRequest()) {
+      return { userId: "demo_sage_system" };
+    }
+    throw new AuthError("Unauthorized", 401);
+  }
   const session = await auth();
   if (!session.userId) {
+    if (await isDemoRequest()) {
+      return { userId: "demo_sage_system" };
+    }
     throw new AuthError("Unauthorized", 401);
   }
   return session;
+}
+
+/** Block bank linking and invite management while browsing the public demo. */
+export function assertNotDemo(isDemo: boolean | undefined) {
+  if (isDemo) {
+    throw new AuthError("This action isn’t available in the demo", 403);
+  }
 }
 
 async function expireStaleInvites(email?: string) {
@@ -118,6 +136,18 @@ export async function acceptInviteByToken(
 
 /** Ensure a DB user + default workspace exist for the signed-in Clerk user. */
 export async function ensureUserAndWorkspace(options?: { inviteToken?: string }) {
+  // Demo cookie only applies when there is no real Clerk session, so a leftover
+  // demo cookie cannot hijack an authenticated member's API calls.
+  if (await isDemoRequest()) {
+    if (!isClerkConfigured()) {
+      return ensureDemoWorkspace();
+    }
+    const session = await auth();
+    if (!session.userId) {
+      return ensureDemoWorkspace();
+    }
+  }
+
   const session = await requireAuth();
   const clerkUser = await currentUser();
   if (!clerkUser) {
@@ -162,7 +192,7 @@ export async function ensureUserAndWorkspace(options?: { inviteToken?: string })
     include: { workspace: true },
   });
   if (membership) {
-    return { user, membership, workspace: membership.workspace };
+    return { user, membership, workspace: membership.workspace, isDemo: false as const };
   }
 
   await expireStaleInvites(email);
@@ -170,7 +200,7 @@ export async function ensureUserAndWorkspace(options?: { inviteToken?: string })
   // Prefer explicit invite token (binds acceptance to the link that was opened).
   if (options?.inviteToken) {
     membership = await acceptInviteByToken(user.id, email, options.inviteToken);
-    return { user, membership, workspace: membership.workspace };
+    return { user, membership, workspace: membership.workspace, isDemo: false as const };
   }
 
   // Email-matched pending invite (non-expired only).
@@ -196,7 +226,7 @@ export async function ensureUserAndWorkspace(options?: { inviteToken?: string })
       where: { id: pendingInvite.id },
       data: { status: "accepted" },
     });
-    return { user, membership, workspace: membership.workspace };
+    return { user, membership, workspace: membership.workspace, isDemo: false as const };
   }
 
   // New workspace: allowlisted emails only (open allowlist only in non-production).
@@ -228,7 +258,7 @@ export async function ensureUserAndWorkspace(options?: { inviteToken?: string })
     include: { workspace: true },
   });
 
-  return { user, membership, workspace: membership.workspace };
+  return { user, membership, workspace: membership.workspace, isDemo: false as const };
 }
 
 /** Request-scoped workspace lookup (dedupes within a single server render). */
