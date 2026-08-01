@@ -38,6 +38,14 @@ const BalanceChart = dynamic(
   () => import("@/components/metrics-charts").then((m) => m.BalanceChart),
   { ssr: false, loading: () => chartFallback },
 );
+const SpendPaceChart = dynamic(
+  () => import("@/components/report-charts").then((m) => m.SpendPaceChart),
+  { ssr: false, loading: () => chartFallback },
+);
+const CategoryPieChart = dynamic(
+  () => import("@/components/budget-charts").then((m) => m.CategoryPieChart),
+  { ssr: false, loading: () => chartFallback },
+);
 
 type DashboardData = {
   month: string;
@@ -67,6 +75,20 @@ type DashboardData = {
     value: number | null;
     quantity: number;
   }>;
+  spendPace?: {
+    series: Array<{
+      day: number;
+      label: string;
+      actual: number | null;
+      ideal: number;
+      date: string;
+    }>;
+    freeToSpend: number | null;
+    idealToDate: number;
+    paceDelta: number | null;
+    dayOfMonth: number;
+    daysInMonth: number;
+  };
 };
 
 type MetricsData = {
@@ -205,12 +227,49 @@ export default function DashboardPage() {
               </p>
             </Card>
             <Card>
-              <p className="text-sm text-[var(--muted)]">{copy.budgetRemaining}</p>
-              <p className="mt-2 font-display text-2xl">
-                {remaining === null ? "—" : formatCurrency(remaining)}
+              <p className="text-sm text-[var(--muted)]">
+                {data.spendPace?.freeToSpend != null
+                  ? "Free to spend"
+                  : copy.budgetRemaining}
               </p>
+              <p className="mt-2 font-display text-2xl">
+                {data.spendPace?.freeToSpend != null
+                  ? formatCurrency(data.spendPace.freeToSpend)
+                  : remaining === null
+                    ? "—"
+                    : formatCurrency(remaining)}
+              </p>
+              {data.spendPace?.paceDelta != null ? (
+                <p
+                  className={`mt-1 text-xs ${
+                    data.spendPace.paceDelta >= 0
+                      ? "text-[var(--positive)]"
+                      : "text-[var(--danger)]"
+                  }`}
+                >
+                  {data.spendPace.paceDelta >= 0 ? "Under" : "Over"} ideal pace
+                  by {formatCurrency(Math.abs(data.spendPace.paceDelta))}
+                </p>
+              ) : null}
             </Card>
           </div>
+
+          {data.spendPace && data.budgetTotal > 0 ? (
+            <Card className="mt-6">
+              <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <h3 className="font-display text-lg">Spend pace</h3>
+                  <p className="text-sm text-[var(--muted)]">
+                    Actual cumulative spend vs ideal burn through the month
+                  </p>
+                </div>
+              </div>
+              <SpendPaceChart
+                data={data.spendPace.series}
+                budgetTotal={data.budgetTotal}
+              />
+            </Card>
+          ) : null}
 
           <section className="mt-8">
             <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
@@ -455,25 +514,43 @@ export default function DashboardPage() {
           </div>
 
           {data.holdings.length > 0 ? (
-            <Card className="mt-6">
-              <h2 className="mb-4 font-display text-lg">
-                {copy.holdings}
-              </h2>
-              <ul className="divide-y divide-[var(--border)]">
-                {data.holdings.map((h) => (
-                  <li key={h.id} className="flex items-center justify-between py-3 text-sm">
-                    <div>
-                      <p className="font-medium">
-                        {h.symbol ? `${h.symbol} · ` : ""}
-                        {h.name}
-                      </p>
-                      <p className="text-[var(--muted)]">{h.quantity} shares</p>
-                    </div>
-                    <span>{h.value != null ? formatCurrency(h.value) : "—"}</span>
-                  </li>
-                ))}
-              </ul>
-            </Card>
+            <div className="mt-6 grid gap-6 lg:grid-cols-2">
+              <Card>
+                <h2 className="mb-4 font-display text-lg">
+                  {copy.holdings}
+                </h2>
+                <ul className="divide-y divide-[var(--border)]">
+                  {data.holdings.map((h) => (
+                    <li key={h.id} className="flex items-center justify-between py-3 text-sm">
+                      <div>
+                        <p className="font-medium">
+                          {h.symbol ? `${h.symbol} · ` : ""}
+                          {h.name}
+                        </p>
+                        <p className="text-[var(--muted)]">{h.quantity} shares</p>
+                      </div>
+                      <span>{h.value != null ? formatCurrency(h.value) : "—"}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+              <Card>
+                <h2 className="mb-1 font-display text-lg">Allocation</h2>
+                <p className="mb-4 text-sm text-[var(--muted)]">
+                  Portfolio mix by holding value
+                </p>
+                <CategoryPieChart
+                  data={data.holdings
+                    .filter((h) => (h.value ?? 0) > 0)
+                    .map((h) => ({
+                      id: h.id,
+                      name: h.symbol || h.name,
+                      value: h.value ?? 0,
+                    }))}
+                  emptyLabel="No holding values yet"
+                />
+              </Card>
+            </div>
           ) : null}
         </>
       ) : null}

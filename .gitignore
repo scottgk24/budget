@@ -38,6 +38,13 @@ yarn-error.log*
 prisma/dev.db
 prisma/dev.db-journal
 *.db
+
+# local bank/statement exports (PII — do not commit)
+Chase*_Activity_*.csv
+RobinHoodCC*.csv
+RobinHoodCC*.xlsx
+Porchlight Expenses*.csv
+Monarch-Money-Budget-scaled.jpeg
 *.db-journal
 
 # vercel

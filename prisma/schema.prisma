@@ -34,6 +34,7 @@ model Workspace {
   budgets        Budget[]
   invites        Invite[]
   holdings       Holding[]
+  goals          Goal[]
 }
 
 model Membership {
@@ -214,4 +215,21 @@ model Budget {
   category  Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   @@unique([workspaceId, categoryId, month, ledger])
+}
+
+model Goal {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  ledger        String // personal | business
+  name          String
+  targetAmount  Float
+  currentAmount Float     @default(0)
+  targetDate    DateTime?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, ledger])
 }

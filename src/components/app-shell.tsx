@@ -146,6 +146,35 @@ function PrivacyToggleButton({ className }: { className?: string }) {
   );
 }
 
+function IconReports(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden {...props} className={iconClass(props.className)}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 19V5M4 19h16" />
+      <path strokeLinecap="round" d="M8 15v-4M12 15V8M16 15v-6" />
+    </svg>
+  );
+}
+
+function IconRecurring(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden {...props} className={iconClass(props.className)}>
+      <rect x="4" y="5" width="16" height="15" rx="2" />
+      <path strokeLinecap="round" d="M8 3v4M16 3v4M4 10h16" />
+      <path strokeLinecap="round" d="M9 14h.01M12 14h.01M15 14h.01M9 17h.01M12 17h.01" />
+    </svg>
+  );
+}
+
+function IconGoals(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden {...props} className={iconClass(props.className)}>
+      <circle cx="12" cy="12" r="8" />
+      <circle cx="12" cy="12" r="4.5" />
+      <circle cx="12" cy="12" r="1.25" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 const NAV: Array<{
   href: string;
   icon: NavIcon;
@@ -155,6 +184,9 @@ const NAV: Array<{
   { href: "/dashboard", icon: IconDashboard, label: (c) => c.navDashboard, demo: true },
   { href: "/transactions", icon: IconTransactions, label: () => "Transactions", demo: true },
   { href: "/budgets", icon: IconBudgets, label: (c) => c.navBudgets, demo: true },
+  { href: "/reports", icon: IconReports, label: () => "Reports", demo: true },
+  { href: "/recurring", icon: IconRecurring, label: () => "Recurring", demo: true },
+  { href: "/goals", icon: IconGoals, label: () => "Goals", demo: true },
   { href: "/accounts", icon: IconAccounts, label: () => "Accounts", demo: true },
   { href: "/settings", icon: IconSettings, label: () => "Settings" },
 ];

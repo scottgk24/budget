@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
 import {
   excludeNonSpendCategory,
-  excludeTransfersCategory,
+  incomeCategoryFilter,
   isAnnualBudgetPeriod,
   NON_SPEND_CATEGORIES,
 } from "@/lib/categories";
@@ -15,6 +15,7 @@ import {
   yearFromPeriod,
   yearRange,
 } from "@/lib/format";
+import { buildSpendPace } from "@/lib/reports";
 
 export async function GET(req: Request) {
   try {
@@ -56,7 +57,6 @@ export async function GET(req: Request) {
         prisma.transaction.aggregate({
           where: {
             ...baseMonth,
-            amount: { gt: 0 },
             ...excludeNonSpendCategory,
           },
           _sum: { amount: true },
@@ -65,7 +65,7 @@ export async function GET(req: Request) {
           where: {
             ...baseMonth,
             amount: { lt: 0 },
-            ...excludeTransfersCategory,
+            ...incomeCategoryFilter,
           },
           _sum: { amount: true },
         }),
@@ -84,7 +84,6 @@ export async function GET(req: Request) {
           by: ["categoryId"],
           where: {
             ...baseMonth,
-            amount: { gt: 0 },
             ...excludeNonSpendCategory,
           },
           _sum: { amount: true },
@@ -95,7 +94,6 @@ export async function GET(req: Request) {
             workspaceId: workspace.id,
             ledger,
             date: { gte: yearStart, lte: yearEnd },
-            amount: { gt: 0 },
             pending: false,
             ...excludeNonSpendCategory,
           },
@@ -165,19 +163,29 @@ export async function GET(req: Request) {
       .sort((a, b) => b.monthSpent - a.monthSpent)
       .slice(0, 6);
 
+    const spent = spendAgg._sum.amount ?? 0;
+    const spendPace = await buildSpendPace({
+      workspaceId: workspace.id,
+      ledger,
+      month,
+      budgetTotal,
+      spentToDate: spent,
+    });
+
     return NextResponse.json({
       month,
       year,
       ledger,
       totalBalance,
       accountCount: accounts.length,
-      spent: spendAgg._sum.amount ?? 0,
+      spent,
       income: Math.abs(incomeAgg._sum.amount ?? 0),
       budgetTotal,
       recent: monthTx,
       categorySpend,
       holdings,
       accounts,
+      spendPace,
     });
   } catch (err) {
     if (err instanceof AuthError) {

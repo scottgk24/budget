@@ -19,36 +19,43 @@ export const REVIEW_QUEUE_CATEGORY_NAMES = [
   OTHER_CATEGORY,
 ] as const;
 
-/** Positive amounts here are not consumption (and Income is never spend). */
-export const NON_SPEND_CATEGORIES = [TRANSFER_CATEGORY, "Income"] as const;
+/** Paychecks, interest, and other true income — not refunds or transfers. */
+export const INCOME_CATEGORY = "Income";
 
-export const excludeTransfersCategory: Prisma.TransactionWhereInput = {
-  NOT: { category: { name: TRANSFER_CATEGORY } },
-};
+/** Positive amounts here are not consumption (and Income is never spend). */
+export const NON_SPEND_CATEGORIES = [TRANSFER_CATEGORY, INCOME_CATEGORY] as const;
 
 export const excludeNonSpendCategory: Prisma.TransactionWhereInput = {
   NOT: { category: { name: { in: [...NON_SPEND_CATEGORIES] } } },
 };
 
+/** Inflows categorized as Income (paychecks, interest). Refunds do not qualify. */
+export const incomeCategoryFilter: Prisma.TransactionWhereInput = {
+  category: { name: INCOME_CATEGORY },
+};
+
+/**
+ * True for spending and refunds in spend categories.
+ * Refunds (negative amounts) net against spend; Income/Transfers never count.
+ */
 export function isSpendAmount(
   amount: number,
   categoryName: string | null | undefined,
 ): boolean {
-  if (amount <= 0) return false;
+  if (amount === 0) return false;
   if (categoryName && (NON_SPEND_CATEGORIES as readonly string[]).includes(categoryName)) {
     return false;
   }
   return true;
 }
 
+/** True only for Income-category inflows — not refunds or transfer credits. */
 export function isIncomeAmount(
   amount: number,
   categoryName: string | null | undefined,
 ): boolean {
   if (amount >= 0) return false;
-  // Transfer inflows are not income; paychecks under Income still count.
-  if (categoryName === TRANSFER_CATEGORY) return false;
-  return true;
+  return categoryName === INCOME_CATEGORY;
 }
 
 export const PERSONAL_CATEGORIES = [
