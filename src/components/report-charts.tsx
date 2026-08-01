@@ -191,9 +191,11 @@ export function SpendPaceChart({
 export function CategoryTrendsChart({
   data,
   keys,
+  onSelect,
 }: {
   data: Array<Record<string, string | number>>;
   keys: string[];
+  onSelect?: (selection: { monthKey: string; categoryName: string; label: string }) => void;
 }) {
   const { formatCompactCurrency } = useMoneyFormat();
   const hasData = data.some((row) =>
@@ -209,7 +211,7 @@ export function CategoryTrendsChart({
   }
 
   return (
-    <div className="h-80 w-full">
+    <div className={`h-80 w-full ${onSelect ? "cursor-pointer" : ""}`}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
           <CartesianGrid stroke={COLORS.grid} strokeDasharray="3 3" vertical={false} />
@@ -239,6 +241,17 @@ export function CategoryTrendsChart({
               fill={STACK_COLORS[i % STACK_COLORS.length]}
               maxBarSize={40}
               activeBar={{ stroke: "#e8f0e4", strokeWidth: 1, opacity: 1 }}
+              cursor={onSelect ? "pointer" : undefined}
+              onClick={(entry) => {
+                if (!onSelect) return;
+                const row = (entry as { payload?: Record<string, string | number> })
+                  .payload;
+                const month = typeof row?.key === "string" ? row.key : null;
+                const label =
+                  typeof row?.label === "string" ? row.label : key;
+                if (!month) return;
+                onSelect({ monthKey: month, categoryName: key, label });
+              }}
             />
           ))}
         </BarChart>
@@ -250,6 +263,7 @@ export function CategoryTrendsChart({
 export function MerchantBarChart({
   data,
   colorByFlexibility = false,
+  onSelect,
 }: {
   data: Array<{
     merchant: string;
@@ -258,6 +272,12 @@ export function MerchantBarChart({
     categoryName?: string | null;
   }>;
   colorByFlexibility?: boolean;
+  onSelect?: (row: {
+    merchant: string;
+    amount: number;
+    count: number;
+    categoryName?: string | null;
+  }) => void;
 }) {
   const { formatCompactCurrency, formatCurrency } = useMoneyFormat();
 
@@ -272,7 +292,7 @@ export function MerchantBarChart({
   const chartData = [...data].reverse();
 
   return (
-    <div className="h-80 w-full">
+    <div className={`h-80 w-full ${onSelect ? "cursor-pointer" : ""}`}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart
           data={chartData}
@@ -322,6 +342,21 @@ export function MerchantBarChart({
             radius={[0, 4, 4, 0]}
             maxBarSize={22}
             activeBar={{ stroke: "#e8f0e4", strokeWidth: 1, opacity: 1 }}
+            cursor={onSelect ? "pointer" : undefined}
+            onClick={(entry) => {
+              if (!onSelect) return;
+              const row = (
+                entry as {
+                  payload?: {
+                    merchant: string;
+                    amount: number;
+                    count: number;
+                    categoryName?: string | null;
+                  };
+                }
+              ).payload;
+              if (row?.merchant) onSelect(row);
+            }}
           >
             {chartData.map((entry) => {
               const flex =
@@ -343,12 +378,16 @@ export function MerchantBarChart({
   );
 }
 
+const HUB_NODE_NAMES = new Set(["Income", "Savings", "Profit"]);
+
 export function CashFlowSankey({
   nodes,
   links,
+  onSelectNode,
 }: {
   nodes: Array<{ name: string }>;
   links: Array<{ source: number; target: number; value: number }>;
+  onSelectNode?: (nodeName: string) => void;
 }) {
   const { formatCurrency } = useMoneyFormat();
 
@@ -363,7 +402,7 @@ export function CashFlowSankey({
   const hasFlexLayer = nodes.some((n) => FLEX_NODE_NAMES.has(n.name));
 
   return (
-    <div className={`w-full ${hasFlexLayer ? "h-96" : "h-80"}`}>
+    <div className={`w-full ${hasFlexLayer ? "h-96" : "h-80"} ${onSelectNode ? "cursor-pointer" : ""}`}>
       <ResponsiveContainer width="100%" height="100%">
         <Sankey
           data={{ nodes, links }}
@@ -402,8 +441,19 @@ export function CashFlowSankey({
             const { x, y, width, height, payload, index } = props;
             const name =
               (payload as { name?: string })?.name ?? nodes[index]?.name ?? "";
+            const clickable =
+              Boolean(onSelectNode) && name && !HUB_NODE_NAMES.has(name);
             return (
-              <g>
+              <g
+                style={{ cursor: clickable ? "pointer" : undefined }}
+                onClick={
+                  clickable
+                    ? () => {
+                        onSelectNode?.(name);
+                      }
+                    : undefined
+                }
+              >
                 <rect
                   x={x}
                   y={y}
@@ -460,6 +510,7 @@ export function CashFlowSankey({
 
 export function FlexibilityTrendsChart({
   data,
+  onSelect,
 }: {
   data: Array<{
     key: string;
@@ -467,6 +518,11 @@ export function FlexibilityTrendsChart({
     Fixed: number;
     Discretionary: number;
   }>;
+  onSelect?: (selection: {
+    monthKey: string;
+    label: string;
+    flexibility: "fixed" | "discretionary";
+  }) => void;
 }) {
   const { formatCompactCurrency } = useMoneyFormat();
   const hasData = data.some((d) => d.Fixed > 0 || d.Discretionary > 0);
@@ -480,7 +536,7 @@ export function FlexibilityTrendsChart({
   }
 
   return (
-    <div className="h-72 w-full">
+    <div className={`h-72 w-full ${onSelect ? "cursor-pointer" : ""}`}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
           <CartesianGrid stroke={COLORS.grid} strokeDasharray="3 3" vertical={false} />
@@ -508,6 +564,20 @@ export function FlexibilityTrendsChart({
             fill={COLORS.fixed}
             maxBarSize={40}
             activeBar={{ stroke: "#e8f0e4", strokeWidth: 1, opacity: 1 }}
+            cursor={onSelect ? "pointer" : undefined}
+            onClick={(entry) => {
+              if (!onSelect) return;
+              const row = (
+                entry as { payload?: { key: string; label: string } }
+              ).payload;
+              if (row?.key) {
+                onSelect({
+                  monthKey: row.key,
+                  label: row.label,
+                  flexibility: "fixed",
+                });
+              }
+            }}
           />
           <Bar
             dataKey="Discretionary"
@@ -517,6 +587,20 @@ export function FlexibilityTrendsChart({
             radius={[4, 4, 0, 0]}
             maxBarSize={40}
             activeBar={{ stroke: "#e8f0e4", strokeWidth: 1, opacity: 1 }}
+            cursor={onSelect ? "pointer" : undefined}
+            onClick={(entry) => {
+              if (!onSelect) return;
+              const row = (
+                entry as { payload?: { key: string; label: string } }
+              ).payload;
+              if (row?.key) {
+                onSelect({
+                  monthKey: row.key,
+                  label: row.label,
+                  flexibility: "discretionary",
+                });
+              }
+            }}
           />
         </BarChart>
       </ResponsiveContainer>

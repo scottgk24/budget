@@ -3,16 +3,24 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useLedger } from "@/components/ledger-context";
+import {
+  BreakdownModal,
+  type BreakdownTarget,
+} from "@/components/period-drilldown";
 import { HIDDEN_MONEY, useMoneyFormat, usePrivacy } from "@/components/privacy-context";
 import { Card, EmptyState, PageHeader } from "@/components/ui";
 import {
   cn,
+  formatMonthLabel,
   monthKey,
+  monthRange,
   monthlyAllotment,
+  toDateParam,
 } from "@/lib/format";
 import { ledgerCopy } from "@/lib/ledger-copy";
 import { personalSpendFlexibility } from "@/lib/categories";
 import { getDate, getDayOfYear, getDaysInMonth, getDaysInYear } from "date-fns";
+import type { CategorySlice } from "@/components/budget-charts";
 
 const CategoryPieChart = dynamic(
   () => import("@/components/budget-charts").then((m) => m.CategoryPieChart),
@@ -253,6 +261,7 @@ export default function BudgetsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [breakdown, setBreakdown] = useState<BreakdownTarget | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -561,9 +570,27 @@ export default function BudgetsPage() {
               <CategoryPieChart
                 data={spendSlices}
                 emptyLabel="Nothing here yet"
+                onSelectSlice={(slice: CategorySlice) => {
+                  const { start, end } = monthRange(month);
+                  setBreakdown({
+                    type: "transactions",
+                    title: slice.name,
+                    subtitle: formatMonthLabel(month),
+                    from: toDateParam(start),
+                    to: toDateParam(end),
+                    categoryId: slice.id,
+                  });
+                }}
               />
             </Card>
           </div>
+
+          <BreakdownModal
+            open={breakdown != null}
+            onClose={() => setBreakdown(null)}
+            ledger={ledger}
+            target={breakdown}
+          />
 
           <div className="mb-3 flex items-center justify-between gap-3">
             <h2 className="font-display text-lg">Categories</h2>

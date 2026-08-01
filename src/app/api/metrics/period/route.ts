@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
+import { endOfDay, format, parseISO, startOfDay } from "date-fns";
 import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
 import { isIncomeAmount, isSpendAmount, personalSpendFlexibility } from "@/lib/categories";
 import { prisma } from "@/lib/db";
 import {
   type MetricsGranularity,
   periodBounds,
+  toDateParam,
 } from "@/lib/format";
 
 function parseGranularity(raw: string | null): MetricsGranularity | null {
@@ -21,19 +23,43 @@ export async function GET(req: Request) {
     const ledger = (searchParams.get("ledger") as "personal" | "business") || "personal";
     const granularity = parseGranularity(searchParams.get("granularity"));
     const key = searchParams.get("key")?.trim();
-
-    if (!granularity || !key) {
-      return NextResponse.json(
-        { error: "granularity and key are required" },
-        { status: 400 },
-      );
-    }
+    const fromParam = searchParams.get("from")?.trim();
+    const toParam = searchParams.get("to")?.trim();
+    const flexibilityFilter = searchParams.get("flexibility")?.trim();
 
     let bounds: { start: Date; end: Date; label: string };
-    try {
-      bounds = periodBounds(key, granularity);
-    } catch {
-      return NextResponse.json({ error: "Invalid period key" }, { status: 400 });
+    let resolvedKey: string | null = key ?? null;
+    let resolvedGranularity: MetricsGranularity | null = granularity;
+
+    if (fromParam && toParam) {
+      try {
+        const start = startOfDay(parseISO(fromParam));
+        const end = endOfDay(parseISO(toParam));
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
+          return NextResponse.json({ error: "Invalid from/to range" }, { status: 400 });
+        }
+        const sameDay = toDateParam(start) === toDateParam(end);
+        bounds = {
+          start,
+          end,
+          label: sameDay
+            ? format(start, "MMM d, yyyy")
+            : `${format(start, "MMM d, yyyy")} – ${format(end, "MMM d, yyyy")}`,
+        };
+      } catch {
+        return NextResponse.json({ error: "Invalid from/to range" }, { status: 400 });
+      }
+    } else if (granularity && key) {
+      try {
+        bounds = periodBounds(key, granularity);
+      } catch {
+        return NextResponse.json({ error: "Invalid period key" }, { status: 400 });
+      }
+    } else {
+      return NextResponse.json(
+        { error: "Provide granularity+key or from+to" },
+        { status: 400 },
+      );
     }
 
     const transactions = await prisma.transaction.findMany({
@@ -97,16 +123,28 @@ export async function GET(req: Request) {
       }
     }
 
-    const categories = [...byCategory.values()].sort((a, b) => {
+    let categories = [...byCategory.values()].sort((a, b) => {
       const aTotal = a.spend + a.income;
       const bTotal = b.spend + b.income;
       return bTotal - aTotal;
     });
 
+    if (
+      flexibilityFilter === "fixed" ||
+      flexibilityFilter === "discretionary"
+    ) {
+      categories = categories.filter((c) => c.flexibility === flexibilityFilter);
+      spend =
+        flexibilityFilter === "fixed" ? fixedSpend : discretionarySpend;
+      income = categories.reduce((sum, c) => sum + c.income, 0);
+    }
+
+    const transactionCount = categories.reduce((sum, c) => sum + c.count, 0);
+
     return NextResponse.json({
       ledger,
-      granularity,
-      key,
+      granularity: resolvedGranularity,
+      key: resolvedKey,
       label: bounds.label,
       start: bounds.start.toISOString(),
       end: bounds.end.toISOString(),
@@ -115,7 +153,7 @@ export async function GET(req: Request) {
       discretionarySpend: ledger === "personal" ? discretionarySpend : null,
       income,
       savings: income - spend,
-      transactionCount: transactions.length,
+      transactionCount,
       categories,
     });
   } catch (err) {

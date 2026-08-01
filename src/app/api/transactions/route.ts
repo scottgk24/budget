@@ -4,6 +4,7 @@ import { endOfDay, parseISO, startOfDay } from "date-fns";
 import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
 import { upsertMerchantRule } from "@/lib/categorize";
 import {
+  FIXED_PERSONAL_CATEGORIES,
   OTHER_CATEGORY,
   REVIEW_CATEGORY,
   REVIEW_QUEUE_CATEGORY_NAMES,
@@ -22,6 +23,9 @@ export async function GET(req: Request) {
     const to = searchParams.get("to")?.trim() || null;
     const accountId = searchParams.get("accountId")?.trim() || null;
     const categoryId = searchParams.get("categoryId")?.trim() || null;
+    const categoryName = searchParams.get("categoryName")?.trim() || null;
+    const merchant = searchParams.get("merchant")?.trim() || null;
+    const flexibility = searchParams.get("flexibility")?.trim() || null;
     const q = searchParams.get("q")?.trim();
     const take = Math.min(Number(searchParams.get("limit") ?? 100), 500);
 
@@ -56,6 +60,37 @@ export async function GET(req: Request) {
       where.category = { name: OTHER_CATEGORY };
     } else if (categoryId) {
       where.categoryId = categoryId;
+    } else if (categoryName === "Uncategorized") {
+      where.categoryId = null;
+    } else if (categoryName) {
+      where.category = { name: { equals: categoryName, mode: "insensitive" } };
+    } else if (flexibility === "fixed") {
+      where.category = { name: { in: [...FIXED_PERSONAL_CATEGORIES] } };
+    } else if (flexibility === "discretionary") {
+      where.OR = [
+        { categoryId: null },
+        { category: { name: { notIn: [...FIXED_PERSONAL_CATEGORIES] } } },
+      ];
+    }
+    if (merchant) {
+      const exact = { equals: merchant, mode: "insensitive" as const };
+      const merchantOr = [
+        { merchantName: exact },
+        {
+          AND: [
+            { OR: [{ merchantName: null }, { merchantName: "" }] },
+            { name: exact },
+          ],
+        },
+      ];
+      if (where.OR) {
+        where.AND = [{ OR: where.OR }, { OR: merchantOr }];
+        delete where.OR;
+      } else if (where.AND) {
+        (where.AND as unknown[]).push({ OR: merchantOr });
+      } else {
+        where.OR = merchantOr;
+      }
     }
     if (q) {
       const contains = { contains: q, mode: "insensitive" as const };
@@ -69,6 +104,8 @@ export async function GET(req: Request) {
       if (where.OR) {
         where.AND = [{ OR: where.OR }, { OR: textOr }];
         delete where.OR;
+      } else if (where.AND) {
+        (where.AND as unknown[]).push({ OR: textOr });
       } else {
         where.OR = textOr;
       }

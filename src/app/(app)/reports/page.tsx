@@ -4,12 +4,19 @@ import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useLedger } from "@/components/ledger-context";
+import {
+  BreakdownModal,
+  type BreakdownTarget,
+} from "@/components/period-drilldown";
 import { useMoneyFormat } from "@/components/privacy-context";
 import { useAppBasePath } from "@/components/use-app-base-path";
 import { Card, PageHeader, Select } from "@/components/ui";
 import {
   METRICS_RANGES,
+  formatMonthLabel,
+  monthRange,
   parseMetricsRangeId,
+  toDateParam,
   type MetricsRangeId,
 } from "@/lib/format";
 import { ledgerCopy, ledgerLabel } from "@/lib/ledger-copy";
@@ -43,6 +50,8 @@ const AgeOfMoneyChart = dynamic(
 );
 
 type ReportsData = {
+  start: string;
+  end: string;
   totals: {
     income: number;
     spend: number;
@@ -88,6 +97,7 @@ export default function ReportsPage() {
   const [data, setData] = useState<ReportsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [breakdown, setBreakdown] = useState<BreakdownTarget | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -107,6 +117,15 @@ export default function ReportsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    setBreakdown(null);
+  }, [ledger, rangeId]);
+
+  const rangeFrom = data ? toDateParam(new Date(data.start)) : null;
+  const rangeTo = data ? toDateParam(new Date(data.end)) : null;
+  const rangeLabel =
+    METRICS_RANGES.find((r) => r.id === rangeId)?.label ?? "Selected range";
 
   return (
     <div>
@@ -226,6 +245,28 @@ export default function ReportsPage() {
               <CashFlowSankey
                 nodes={data.sankey.nodes}
                 links={data.sankey.links}
+                onSelectNode={(nodeName) => {
+                  if (!rangeFrom || !rangeTo) return;
+                  if (nodeName === "Fixed" || nodeName === "Discretionary") {
+                    setBreakdown({
+                      type: "range",
+                      title: nodeName,
+                      from: rangeFrom,
+                      to: rangeTo,
+                      flexibility:
+                        nodeName === "Fixed" ? "fixed" : "discretionary",
+                    });
+                    return;
+                  }
+                  setBreakdown({
+                    type: "transactions",
+                    title: nodeName,
+                    subtitle: rangeLabel,
+                    from: rangeFrom,
+                    to: rangeTo,
+                    categoryName: nodeName,
+                  });
+                }}
               />
             )}
           </Card>
@@ -237,7 +278,19 @@ export default function ReportsPage() {
                 Discretionary is what you can most easily change month to month
               </p>
               {loading ? chartFallback : (
-                <FlexibilityTrendsChart data={data.flexibilityTrends} />
+                <FlexibilityTrendsChart
+                  data={data.flexibilityTrends}
+                  onSelect={({ monthKey, flexibility }) => {
+                    setBreakdown({
+                      type: "period",
+                      periodKey: monthKey,
+                      granularity: "monthly",
+                      flexibility,
+                      title:
+                        flexibility === "fixed" ? "Fixed" : "Discretionary",
+                    });
+                  }}
+                />
               )}
             </Card>
           ) : null}
@@ -257,6 +310,28 @@ export default function ReportsPage() {
               <CategoryTrendsChart
                 data={data.categoryTrends.months}
                 keys={data.categoryTrends.keys}
+                onSelect={({ monthKey, categoryName }) => {
+                  if (categoryName === "Other") {
+                    setBreakdown({
+                      type: "period",
+                      periodKey: monthKey,
+                      granularity: "monthly",
+                      flexibility:
+                        ledger === "personal" ? "discretionary" : undefined,
+                      title: "Other",
+                    });
+                    return;
+                  }
+                  const { start, end } = monthRange(monthKey);
+                  setBreakdown({
+                    type: "transactions",
+                    title: categoryName,
+                    subtitle: formatMonthLabel(monthKey),
+                    from: toDateParam(start),
+                    to: toDateParam(end),
+                    categoryName,
+                  });
+                }}
               />
             )}
           </Card>
@@ -273,6 +348,17 @@ export default function ReportsPage() {
                 <MerchantBarChart
                   data={data.merchants}
                   colorByFlexibility={ledger === "personal"}
+                  onSelect={(row) => {
+                    if (!rangeFrom || !rangeTo) return;
+                    setBreakdown({
+                      type: "transactions",
+                      title: row.merchant,
+                      subtitle: rangeLabel,
+                      from: rangeFrom,
+                      to: rangeTo,
+                      merchant: row.merchant,
+                    });
+                  }}
                 />
               )}
             </Card>
@@ -305,6 +391,13 @@ export default function ReportsPage() {
               </ul>
             </Card>
           ) : null}
+
+          <BreakdownModal
+            open={breakdown != null}
+            onClose={() => setBreakdown(null)}
+            ledger={ledger}
+            target={breakdown}
+          />
         </>
       ) : null}
     </div>

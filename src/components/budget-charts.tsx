@@ -48,9 +48,11 @@ function PieTooltip({
 export function CategoryPieChart({
   data,
   emptyLabel = "Nothing to show yet",
+  onSelectSlice,
 }: {
   data: CategorySlice[];
   emptyLabel?: string;
+  onSelectSlice?: (slice: CategorySlice) => void;
 }) {
   const total = data.reduce((sum, d) => sum + d.value, 0);
   const slices = data
@@ -66,9 +68,15 @@ export function CategoryPieChart({
     );
   }
 
+  const interactive = Boolean(onSelectSlice);
+
+  function selectSlice(slice: CategorySlice & { pct: number }) {
+    onSelectSlice?.({ id: slice.id, name: slice.name, value: slice.value });
+  }
+
   return (
     <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(140px,180px)] sm:items-center">
-      <div className="h-56 w-full min-w-0">
+      <div className={`h-56 w-full min-w-0 ${interactive ? "cursor-pointer" : ""}`}>
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
@@ -87,6 +95,14 @@ export function CategoryPieChart({
                 <Cell
                   key={entry.id}
                   fill={SLICE_COLORS[i % SLICE_COLORS.length]}
+                  cursor={interactive ? "pointer" : undefined}
+                  onClick={
+                    interactive
+                      ? () => {
+                          selectSlice(entry);
+                        }
+                      : undefined
+                  }
                 />
               ))}
             </Pie>
@@ -96,17 +112,38 @@ export function CategoryPieChart({
       </div>
       <ul className="max-h-56 space-y-1.5 overflow-y-auto text-sm">
         {slices.slice(0, 8).map((s, i) => (
-          <li key={s.id} className="flex items-center justify-between gap-2">
-            <span className="flex min-w-0 items-center gap-2">
-              <span
-                className="h-2.5 w-2.5 shrink-0 rounded-sm"
-                style={{ background: SLICE_COLORS[i % SLICE_COLORS.length] }}
-              />
-              <span className="truncate">{s.name}</span>
-            </span>
-            <span className="shrink-0 tabular-nums text-[var(--muted)]">
-              {s.pct.toFixed(0)}%
-            </span>
+          <li key={s.id}>
+            {interactive ? (
+              <button
+                type="button"
+                onClick={() => selectSlice(s)}
+                className="flex w-full items-center justify-between gap-2 rounded-md text-left transition hover:bg-[var(--bg)]"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                    style={{ background: SLICE_COLORS[i % SLICE_COLORS.length] }}
+                  />
+                  <span className="truncate">{s.name}</span>
+                </span>
+                <span className="shrink-0 tabular-nums text-[var(--muted)]">
+                  {s.pct.toFixed(0)}%
+                </span>
+              </button>
+            ) : (
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                    style={{ background: SLICE_COLORS[i % SLICE_COLORS.length] }}
+                  />
+                  <span className="truncate">{s.name}</span>
+                </span>
+                <span className="shrink-0 tabular-nums text-[var(--muted)]">
+                  {s.pct.toFixed(0)}%
+                </span>
+              </div>
+            )}
           </li>
         ))}
         {slices.length > 8 ? (
