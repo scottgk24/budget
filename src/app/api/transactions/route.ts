@@ -58,10 +58,13 @@ export async function GET(req: Request) {
       where.categoryId = categoryId;
     }
     if (q) {
+      const contains = { contains: q, mode: "insensitive" as const };
       const textOr = [
-        { name: { contains: q } },
-        { merchantName: { contains: q } },
-        { notes: { contains: q } },
+        { name: contains },
+        { merchantName: contains },
+        { notes: contains },
+        { category: { name: contains } },
+        { account: { name: contains } },
       ];
       if (where.OR) {
         where.AND = [{ OR: where.OR }, { OR: textOr }];

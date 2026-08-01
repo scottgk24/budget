@@ -11,6 +11,7 @@ import {
   monthlyAllotment,
 } from "@/lib/format";
 import { ledgerCopy } from "@/lib/ledger-copy";
+import { personalSpendFlexibility } from "@/lib/categories";
 import { getDate, getDayOfYear, getDaysInMonth, getDaysInYear } from "date-fns";
 
 const CategoryPieChart = dynamic(
@@ -284,6 +285,22 @@ export default function BudgetsPage() {
     [categories],
   );
 
+  const discretionaryRows = useMemo(
+    () =>
+      ledger === "personal"
+        ? rows.filter((c) => personalSpendFlexibility(c.name) === "discretionary")
+        : [],
+    [rows, ledger],
+  );
+
+  const fixedRows = useMemo(
+    () =>
+      ledger === "personal"
+        ? rows.filter((c) => personalSpendFlexibility(c.name) === "fixed")
+        : [],
+    [rows, ledger],
+  );
+
   const isAnnual = (c: Category) => c.budgetPeriod === "annual";
 
   /** Monthly picture: annual categories contribute yearly÷12. */
@@ -294,6 +311,26 @@ export default function BudgetsPage() {
         return sum + (isAnnual(c) ? monthlyAllotment(amt) : amt);
       }, 0),
     [rows, drafts],
+  );
+
+  const discretionaryBudgeted = useMemo(
+    () =>
+      discretionaryRows.reduce((sum, c) => {
+        const amt = drafts[c.id] ?? 0;
+        return sum + (isAnnual(c) ? monthlyAllotment(amt) : amt);
+      }, 0),
+    [discretionaryRows, drafts],
+  );
+
+  const discretionarySpent = useMemo(
+    () =>
+      discretionaryRows.reduce((sum, c) => {
+        if (isAnnual(c)) {
+          return sum + monthlyAllotment(spentYtdByCategory[c.id] ?? 0);
+        }
+        return sum + (spentByCategory[c.id] ?? 0);
+      }, 0),
+    [discretionaryRows, spentByCategory, spentYtdByCategory],
   );
 
   /** Cash that actually left accounts this month (can spike on annual bills). */
@@ -435,13 +472,37 @@ export default function BudgetsPage() {
         <EmptyState title="No categories yet" />
       ) : (
         <>
-          <div className="mb-6 grid gap-4 sm:grid-cols-3">
+          <div
+            className={`mb-6 grid gap-4 ${
+              ledger === "personal" ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"
+            }`}
+          >
             <Card>
               <p className="text-sm text-[var(--muted)]">{copy.totalBudgeted}</p>
               <p className="mt-2 font-display text-2xl tabular-nums">
                 {formatCurrency(totalBudgeted)}
               </p>
             </Card>
+            {ledger === "personal" ? (
+              <Card>
+                <p className="text-sm text-[var(--muted)]">Discretionary left</p>
+                <p
+                  className={`mt-2 font-display text-2xl tabular-nums ${
+                    discretionaryBudgeted - discretionarySpent >= 0
+                      ? "text-[var(--positive)]"
+                      : "text-[var(--danger)]"
+                  }`}
+                >
+                  {discretionaryBudgeted > 0
+                    ? formatCurrency(discretionaryBudgeted - discretionarySpent)
+                    : "—"}
+                </p>
+                <p className="mt-1 text-xs text-[var(--muted)]">
+                  {formatCurrency(discretionarySpent)} of{" "}
+                  {formatCurrency(discretionaryBudgeted)} budget
+                </p>
+              </Card>
+            ) : null}
             <Card>
               <p className="text-sm text-[var(--muted)]">{copy.spentThisMonth}</p>
               <p className="mt-2 font-display text-2xl tabular-nums">
@@ -532,7 +593,21 @@ export default function BudgetsPage() {
             </div>
 
             <ul className="space-y-2 p-2 sm:p-2.5">
-              {rows.map((cat, index) => {
+              {(ledger === "personal"
+                ? [
+                    { label: "Discretionary", cats: discretionaryRows },
+                    { label: "Fixed", cats: fixedRows },
+                  ]
+                : [{ label: null as string | null, cats: rows }]
+              ).map((group) => (
+                <li key={group.label ?? "all"} className="list-none space-y-2">
+                  {group.label ? (
+                    <p className="px-2 pt-2 text-[11px] font-medium uppercase tracking-wide text-[var(--muted)] first:pt-0">
+                      {group.label}
+                    </p>
+                  ) : null}
+                  <ul className="space-y-2">
+                    {group.cats.map((cat, index) => {
                 const annual = isAnnual(cat);
                 const monthSpent = spentByCategory[cat.id] ?? 0;
                 const ytdSpent = spentYtdByCategory[cat.id] ?? 0;
@@ -738,7 +813,10 @@ export default function BudgetsPage() {
                     ) : null}
                   </li>
                 );
-              })}
+                    })}
+                  </ul>
+                </li>
+              ))}
             </ul>
           </Card>
         </>

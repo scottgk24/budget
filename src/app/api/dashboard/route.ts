@@ -5,6 +5,7 @@ import {
   incomeCategoryFilter,
   isAnnualBudgetPeriod,
   NON_SPEND_CATEGORIES,
+  personalSpendFlexibility,
 } from "@/lib/categories";
 import { prisma } from "@/lib/db";
 import { sumNetBalances } from "@/lib/accounts";
@@ -157,6 +158,8 @@ export async function GET(req: Request) {
           budget,
           budgetPeriod: annual ? ("annual" as const) : ("monthly" as const),
           monthSpent: row._sum.amount ?? 0,
+          flexibility:
+            ledger === "personal" ? personalSpendFlexibility(name) : null,
         };
       })
       .filter((row) => !nonSpend.has(row.name))
@@ -164,12 +167,54 @@ export async function GET(req: Request) {
       .slice(0, 6);
 
     const spent = spendAgg._sum.amount ?? 0;
+
+    let fixedSpend = 0;
+    let discretionarySpend = 0;
+    let fixedBudget = 0;
+    let discretionaryBudget = 0;
+
+    if (ledger === "personal") {
+      for (const row of byCategory) {
+        const cat = row.categoryId ? catMap[row.categoryId] : null;
+        const name = cat?.name ?? "Uncategorized";
+        if (nonSpend.has(name)) continue;
+        const amount = row._sum.amount ?? 0;
+        if (personalSpendFlexibility(name) === "fixed") fixedSpend += amount;
+        else discretionarySpend += amount;
+      }
+
+      for (const [categoryId, amount] of Object.entries(monthlyBudgetByCat)) {
+        const name = catMap[categoryId]?.name ?? "Uncategorized";
+        if (personalSpendFlexibility(name) === "fixed") fixedBudget += amount;
+        else discretionaryBudget += amount;
+      }
+      for (const [categoryId, amount] of Object.entries(annualBudgetByCat)) {
+        const name = catMap[categoryId]?.name ?? "Uncategorized";
+        const monthly = monthlyAllotment(amount);
+        if (personalSpendFlexibility(name) === "fixed") fixedBudget += monthly;
+        else discretionaryBudget += monthly;
+      }
+    }
+
+    const paceBudget =
+      ledger === "personal" && discretionaryBudget > 0
+        ? discretionaryBudget
+        : budgetTotal;
+    const paceSpent =
+      ledger === "personal" && discretionaryBudget > 0
+        ? discretionarySpend
+        : spent;
+
     const spendPace = await buildSpendPace({
       workspaceId: workspace.id,
       ledger,
       month,
-      budgetTotal,
-      spentToDate: spent,
+      budgetTotal: paceBudget,
+      spentToDate: paceSpent,
+      flexibility:
+        ledger === "personal" && discretionaryBudget > 0
+          ? "discretionary"
+          : "all",
     });
 
     return NextResponse.json({
@@ -179,6 +224,10 @@ export async function GET(req: Request) {
       totalBalance,
       accountCount: accounts.length,
       spent,
+      fixedSpend: ledger === "personal" ? fixedSpend : null,
+      discretionarySpend: ledger === "personal" ? discretionarySpend : null,
+      fixedBudget: ledger === "personal" ? fixedBudget : null,
+      discretionaryBudget: ledger === "personal" ? discretionaryBudget : null,
       income: Math.abs(incomeAgg._sum.amount ?? 0),
       budgetTotal,
       recent: monthTx,
@@ -186,6 +235,10 @@ export async function GET(req: Request) {
       holdings,
       accounts,
       spendPace,
+      spendPaceScope:
+        ledger === "personal" && discretionaryBudget > 0
+          ? "discretionary"
+          : "all",
     });
   } catch (err) {
     if (err instanceof AuthError) {

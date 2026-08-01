@@ -19,6 +19,8 @@ export type MetricsPoint = {
   key: string;
   label: string;
   spend: number;
+  fixedSpend?: number;
+  discretionarySpend?: number;
   income: number;
   savings: number;
   balance?: number;
@@ -32,10 +34,14 @@ type ChartProps = {
   spendLabel?: string;
   savingsLabel?: string;
   emptyLabel?: string;
+  /** When true, stack fixed + discretionary spend instead of a single spend series. */
+  splitSpend?: boolean;
 };
 
 const COLORS = {
   spend: "#d4655a",
+  fixed: "#5c6b46",
+  discretionary: "#d4655a",
   income: "#7ec07a",
   savingsPos: "#7ec07a",
   savingsNeg: "#d4655a",
@@ -101,9 +107,15 @@ export function SpendIncomeChart({
   selectedKey,
   incomeLabel = "Income",
   spendLabel = "Spend",
+  splitSpend = false,
 }: ChartProps) {
   const { formatCompactCurrency } = useMoneyFormat();
   const hasData = data.some((d) => d.spend > 0 || d.income > 0);
+  const useSplit =
+    splitSpend &&
+    data.some(
+      (d) => (d.fixedSpend ?? 0) > 0 || (d.discretionarySpend ?? 0) > 0,
+    );
 
   if (!hasData) {
     return (
@@ -129,6 +141,14 @@ export function SpendIncomeChart({
             <linearGradient id="spendFill" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={COLORS.spend} stopOpacity={0.22} />
               <stop offset="100%" stopColor={COLORS.spend} stopOpacity={0.02} />
+            </linearGradient>
+            <linearGradient id="fixedFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={COLORS.fixed} stopOpacity={0.35} />
+              <stop offset="100%" stopColor={COLORS.fixed} stopOpacity={0.06} />
+            </linearGradient>
+            <linearGradient id="discFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={COLORS.discretionary} stopOpacity={0.28} />
+              <stop offset="100%" stopColor={COLORS.discretionary} stopOpacity={0.04} />
             </linearGradient>
           </defs>
           <CartesianGrid stroke={COLORS.grid} strokeDasharray="3 3" vertical={false} />
@@ -161,16 +181,43 @@ export function SpendIncomeChart({
             dot={false}
             activeDot={{ r: 5 }}
           />
-          <Area
-            type="monotone"
-            dataKey="spend"
-            name={spendLabel}
-            stroke={selectedKey ? COLORS.selected : COLORS.spend}
-            fill="url(#spendFill)"
-            strokeWidth={2}
-            dot={false}
-            activeDot={{ r: 5 }}
-          />
+          {useSplit ? (
+            <>
+              <Area
+                type="monotone"
+                dataKey="fixedSpend"
+                name="Fixed"
+                stackId="spend"
+                stroke={COLORS.fixed}
+                fill="url(#fixedFill)"
+                strokeWidth={1.5}
+                dot={false}
+                activeDot={{ r: 4 }}
+              />
+              <Area
+                type="monotone"
+                dataKey="discretionarySpend"
+                name="Discretionary"
+                stackId="spend"
+                stroke={selectedKey ? COLORS.selected : COLORS.discretionary}
+                fill="url(#discFill)"
+                strokeWidth={2}
+                dot={false}
+                activeDot={{ r: 5 }}
+              />
+            </>
+          ) : (
+            <Area
+              type="monotone"
+              dataKey="spend"
+              name={spendLabel}
+              stroke={selectedKey ? COLORS.selected : COLORS.spend}
+              fill="url(#spendFill)"
+              strokeWidth={2}
+              dot={false}
+              activeDot={{ r: 5 }}
+            />
+          )}
         </AreaChart>
       </ResponsiveContainer>
     </div>

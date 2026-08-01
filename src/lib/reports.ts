@@ -6,10 +6,11 @@ import {
 } from "date-fns";
 import {
   excludeNonSpendCategory,
-  incomeCategoryFilter,
   isIncomeAmount,
   isSpendAmount,
   merchantRuleKey,
+  personalSpendFlexibility,
+  type SpendFlexibility,
 } from "@/lib/categories";
 import { computeAgeOfMoney } from "@/lib/age-of-money";
 import { prisma } from "@/lib/db";
@@ -19,14 +20,211 @@ import type { Ledger } from "@/lib/types";
 
 export type { SpendPacePoint };
 
+type SankeyNode = { name: string };
+type SankeyLink = { source: number; target: number; value: number };
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Keep the largest branches; roll the rest into Other. */
+function trimFlows(
+  entries: Array<{ name: string; value: number }>,
+  maxNamed: number,
+  minShare: number,
+): Array<{ name: string; value: number }> {
+  const total = entries.reduce((s, e) => s + e.value, 0);
+  if (total <= 0) return [];
+  const sorted = [...entries].sort((a, b) => b.value - a.value);
+  const flows: Array<{ name: string; value: number }> = [];
+  let other = 0;
+  for (const entry of sorted) {
+    if (entry.name === "Other") {
+      other += entry.value;
+      continue;
+    }
+    const share = entry.value / total;
+    if (flows.length >= maxNamed || (flows.length >= 2 && share < minShare)) {
+      other += entry.value;
+      continue;
+    }
+    flows.push({ ...entry });
+  }
+  if (other > 0) {
+    if (other / total < 0.04 && flows.length > 0) {
+      flows[flows.length - 1]!.value = round2(
+        flows[flows.length - 1]!.value + other,
+      );
+    } else {
+      flows.push({ name: "Other", value: round2(other) });
+    }
+  }
+  return flows.map((f) => ({ ...f, value: round2(f.value) }));
+}
+
+/**
+ * Business: Income → categories (flat).
+ * Personal: Income → Fixed / Discretionary → categories, so controllable spend stands out.
+ */
+export function buildCashFlowSankey(params: {
+  ledger: Ledger;
+  incomeTotal: number;
+  spendByCat: Map<string, number>;
+}): { nodes: SankeyNode[]; links: SankeyLink[] } {
+  const { ledger, incomeTotal, spendByCat } = params;
+  const totalSpend = [...spendByCat.values()].reduce((a, b) => a + b, 0);
+  const deficit = round2(Math.max(0, totalSpend - incomeTotal));
+  const surplus = round2(Math.max(0, incomeTotal - totalSpend));
+  const incomeLabel = ledger === "business" ? "Revenue" : "Income";
+  const savingsLabel = ledger === "business" ? "Profit" : "Savings";
+
+  const nodes: SankeyNode[] = [];
+  const links: SankeyLink[] = [];
+  const addNode = (name: string) => {
+    nodes.push({ name });
+    return nodes.length - 1;
+  };
+
+  if (ledger !== "personal") {
+    const flows = trimFlows(
+      [...spendByCat.entries()].map(([name, value]) => ({ name, value })),
+      8,
+      0.03,
+    );
+    if (deficit > 0 && totalSpend > 0) {
+      const incomeIdx = incomeTotal > 0 ? addNode(incomeLabel) : -1;
+      const savingsIdx = addNode(savingsLabel);
+      const incomeShare = incomeTotal / totalSpend;
+      const savingsShare = deficit / totalSpend;
+      for (const { name, value } of flows) {
+        const idx = addNode(name);
+        const fromIncome = round2(value * incomeShare);
+        const fromSavings = round2(value * savingsShare);
+        if (incomeIdx >= 0 && fromIncome > 0) {
+          links.push({ source: incomeIdx, target: idx, value: fromIncome });
+        }
+        if (fromSavings > 0) {
+          links.push({ source: savingsIdx, target: idx, value: fromSavings });
+        }
+      }
+    } else {
+      const incomeIdx = addNode(incomeLabel);
+      for (const { name, value } of flows) {
+        links.push({ source: incomeIdx, target: addNode(name), value });
+      }
+      if (surplus > 0) {
+        links.push({
+          source: incomeIdx,
+          target: addNode(savingsLabel),
+          value: surplus,
+        });
+      }
+    }
+    return { nodes, links };
+  }
+
+  // Personal: middle Fixed / Discretionary layer, then category detail.
+  const byFlex = new Map<
+    SpendFlexibility,
+    Array<{ name: string; value: number }>
+  >([
+    ["fixed", []],
+    ["discretionary", []],
+  ]);
+  for (const [name, value] of spendByCat) {
+    byFlex.get(personalSpendFlexibility(name))!.push({ name, value });
+  }
+  const fixedFlows = trimFlows(byFlex.get("fixed")!, 6, 0.04);
+  const discFlows = trimFlows(byFlex.get("discretionary")!, 7, 0.04);
+  const fixedTotal = round2(fixedFlows.reduce((s, f) => s + f.value, 0));
+  const discTotal = round2(discFlows.reduce((s, f) => s + f.value, 0));
+
+  const incomeIdx = incomeTotal > 0 || surplus > 0 || fixedTotal + discTotal === 0
+    ? addNode(incomeLabel)
+    : -1;
+  const savingsSourceIdx =
+    deficit > 0 && totalSpend > 0 ? addNode(savingsLabel) : -1;
+
+  const fixedIdx = fixedTotal > 0 ? addNode("Fixed") : -1;
+  const discIdx = discTotal > 0 ? addNode("Discretionary") : -1;
+
+  const fundMiddle = (
+    middleIdx: number,
+    middleTotal: number,
+  ) => {
+    if (middleIdx < 0 || middleTotal <= 0 || totalSpend <= 0) return;
+    if (deficit > 0) {
+      const incomeShare = incomeTotal / totalSpend;
+      const savingsShare = deficit / totalSpend;
+      const fromIncome = round2(middleTotal * incomeShare);
+      const fromSavings = round2(middleTotal * savingsShare);
+      if (incomeIdx >= 0 && fromIncome > 0) {
+        links.push({ source: incomeIdx, target: middleIdx, value: fromIncome });
+      }
+      if (savingsSourceIdx >= 0 && fromSavings > 0) {
+        links.push({
+          source: savingsSourceIdx,
+          target: middleIdx,
+          value: fromSavings,
+        });
+      }
+    } else if (incomeIdx >= 0) {
+      links.push({ source: incomeIdx, target: middleIdx, value: middleTotal });
+    }
+  };
+
+  fundMiddle(fixedIdx, fixedTotal);
+  fundMiddle(discIdx, discTotal);
+
+  const linkCats = (
+    middleIdx: number,
+    flows: Array<{ name: string; value: number }>,
+  ) => {
+    if (middleIdx < 0) return;
+    for (const { name, value } of flows) {
+      if (value <= 0) continue;
+      // Avoid colliding with middle-layer names.
+      const label =
+        name === "Fixed" || name === "Discretionary" ? `${name} (other)` : name;
+      links.push({ source: middleIdx, target: addNode(label), value });
+    }
+  };
+
+  linkCats(fixedIdx, fixedFlows);
+  linkCats(discIdx, discFlows);
+
+  if (surplus > 0 && incomeIdx >= 0) {
+    links.push({
+      source: incomeIdx,
+      target: addNode(savingsLabel),
+      value: surplus,
+    });
+  }
+
+  return { nodes, links };
+}
+
+export function sumSpendByFlexibility(
+  spendByCat: Map<string, number>,
+): { fixed: number; discretionary: number } {
+  let fixed = 0;
+  let discretionary = 0;
+  for (const [name, value] of spendByCat) {
+    if (personalSpendFlexibility(name) === "fixed") fixed += value;
+    else discretionary += value;
+  }
+  return { fixed: round2(fixed), discretionary: round2(discretionary) };
+}
+
 export async function buildSpendPace(params: {
   workspaceId: string;
   ledger: Ledger;
   month: string;
   budgetTotal: number;
   spentToDate: number;
+  /** Personal: pace only discretionary spend against a discretionary budget. */
+  flexibility?: "all" | "discretionary" | "fixed";
 }) {
   const { workspaceId, ledger, month, budgetTotal } = params;
+  const flexibility = params.flexibility ?? "all";
   const start = startOfMonth(new Date(`${month}-01T12:00:00`));
   const end = endOfMonth(start);
   const today = new Date();
@@ -42,12 +240,20 @@ export async function buildSpendPace(params: {
       ...excludeNonSpendCategory,
       amount: { gt: 0 },
     },
-    select: { amount: true, date: true },
+    select: {
+      amount: true,
+      date: true,
+      category: { select: { name: true } },
+    },
     orderBy: { date: "asc" },
   });
 
   const spendByDay = new Map<string, number>();
   for (const tx of txs) {
+    if (flexibility !== "all" && ledger === "personal") {
+      const flex = personalSpendFlexibility(tx.category?.name);
+      if (flex !== flexibility) continue;
+    }
     const key = format(tx.date, "yyyy-MM-dd");
     spendByDay.set(key, (spendByDay.get(key) ?? 0) + tx.amount);
   }
@@ -219,7 +425,7 @@ export async function buildReports(params: {
     .sort((a, b) => b.amount - a.amount)
     .slice(0, 15);
 
-  // --- Sankey: Income → categories ---
+  // --- Sankey + flexibility totals ---
   let incomeTotal = 0;
   const spendByCat = new Map<string, number>();
   for (const tx of txs) {
@@ -232,37 +438,82 @@ export async function buildReports(params: {
     spendByCat.set(name, (spendByCat.get(name) ?? 0) + tx.amount);
   }
 
-  const sankeyCats = [...spendByCat.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10);
-  const sankeyOther = [...spendByCat.entries()]
-    .slice(10)
-    .reduce((sum, [, v]) => sum + v, 0);
-
-  const sankeyNodes: Array<{ name: string }> = [{ name: "Income" }];
-  const sankeyLinks: Array<{ source: number; target: number; value: number }> =
-    [];
-  for (const [name, value] of sankeyCats) {
-    const idx = sankeyNodes.length;
-    sankeyNodes.push({ name });
-    sankeyLinks.push({
-      source: 0,
-      target: idx,
-      value: Math.round(value * 100) / 100,
-    });
-  }
-  if (sankeyOther > 0) {
-    const idx = sankeyNodes.length;
-    sankeyNodes.push({ name: "Other" });
-    sankeyLinks.push({
-      source: 0,
-      target: idx,
-      value: Math.round(sankeyOther * 100) / 100,
-    });
-  }
-
   const totalSpend = [...spendByCat.values()].reduce((a, b) => a + b, 0);
-  const savings = Math.round((incomeTotal - totalSpend) * 100) / 100;
+  const savings = round2(incomeTotal - totalSpend);
+  const flexibility =
+    ledger === "personal"
+      ? sumSpendByFlexibility(spendByCat)
+      : { fixed: 0, discretionary: round2(totalSpend) };
+  const { nodes: sankeyNodes, links: sankeyLinks } = buildCashFlowSankey({
+    ledger,
+    incomeTotal,
+    spendByCat,
+  });
+
+  // Monthly fixed vs discretionary (personal tracking)
+  const flexibilityTrends =
+    ledger === "personal"
+      ? months.map((m) => {
+          const monthMap = byMonthCat.get(m)!;
+          let fixed = 0;
+          let discretionary = 0;
+          for (const [name, amount] of monthMap) {
+            if (personalSpendFlexibility(name) === "fixed") fixed += amount;
+            else discretionary += amount;
+          }
+          return {
+            key: m,
+            label: format(new Date(`${m}-01T12:00:00`), "MMM yy"),
+            Fixed: round2(fixed),
+            Discretionary: round2(discretionary),
+          };
+        })
+      : [];
+
+  // Prefer discretionary categories in the stacked trends for personal.
+  let reportCategoryTrends = categoryTrends;
+  let reportCategoryKeys = categoryKeys;
+  if (ledger === "personal") {
+    const discTop = [...catTotals.entries()]
+      .filter(([name]) => personalSpendFlexibility(name) === "discretionary")
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([name]) => name);
+
+    reportCategoryTrends = months.map((m) => {
+      const monthMap = byMonthCat.get(m)!;
+      const row: Record<string, string | number> = {
+        key: m,
+        label: format(new Date(`${m}-01T12:00:00`), "MMM yy"),
+      };
+      let other = 0;
+      for (const [name, amount] of monthMap) {
+        if (personalSpendFlexibility(name) !== "discretionary") continue;
+        if (discTop.includes(name)) {
+          row[name] = Math.round(amount * 100) / 100;
+        } else {
+          other += amount;
+        }
+      }
+      for (const name of discTop) {
+        if (row[name] == null) row[name] = 0;
+      }
+      row.Other = Math.round(other * 100) / 100;
+      return row;
+    });
+
+    const discHasOther = reportCategoryTrends.some(
+      (r) => typeof r.Other === "number" && (r.Other as number) > 0,
+    );
+    reportCategoryKeys = discHasOther
+      ? [...discTop.filter((c) => c !== "Other"), "Other"]
+      : discTop.filter((c) => c !== "Other");
+    if (!discHasOther) {
+      for (const row of reportCategoryTrends) {
+        delete row.Other;
+      }
+    }
+  }
 
   // --- Age of money ---
   const age = computeAgeOfMoney(
@@ -293,18 +544,25 @@ export async function buildReports(params: {
     start: start.toISOString(),
     end: end.toISOString(),
     totals: {
-      income: Math.round(incomeTotal * 100) / 100,
-      spend: Math.round(totalSpend * 100) / 100,
+      income: round2(incomeTotal),
+      spend: round2(totalSpend),
       savings,
       savingsRate:
         incomeTotal > 0
           ? Math.round((savings / incomeTotal) * 1000) / 10
           : null,
+      fixed: flexibility.fixed,
+      discretionary: flexibility.discretionary,
+      discretionaryShare:
+        totalSpend > 0
+          ? Math.round((flexibility.discretionary / totalSpend) * 1000) / 10
+          : null,
     },
     categoryTrends: {
-      months: categoryTrends,
-      keys: categoryKeys,
+      months: reportCategoryTrends,
+      keys: reportCategoryKeys,
     },
+    flexibilityTrends,
     merchants,
     sankey: {
       nodes: sankeyNodes,
@@ -319,4 +577,4 @@ export async function buildReports(params: {
 }
 
 /** Re-export for callers that need the filter fragments. */
-export { excludeNonSpendCategory, incomeCategoryFilter };
+export { excludeNonSpendCategory };

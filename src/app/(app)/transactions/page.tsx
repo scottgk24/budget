@@ -9,8 +9,13 @@ import { Button, Card, EmptyState, Input, PageHeader, Select } from "@/component
 import {
   formatDate,
   formatMonthLabel,
+  METRICS_RANGES,
+  metricsRange,
   monthKey,
+  parseMetricsRangeId,
   recentMonthKeys,
+  toDateParam,
+  type MetricsRangeId,
 } from "@/lib/format";
 import { merchantRuleKey, OTHER_CATEGORY, REVIEW_CATEGORY } from "@/lib/categories";
 
@@ -31,7 +36,22 @@ type Tx = {
   account: { name: string; mask: string | null };
 };
 
+/** Period is either a lookback range or a single yyyy-MM month. */
+type Period = MetricsRangeId | string;
+
 const MONTH_OPTIONS = recentMonthKeys(18);
+const RANGE_IDS = new Set<string>(METRICS_RANGES.map((r) => r.id));
+
+function isRangePeriod(period: Period): period is MetricsRangeId {
+  return RANGE_IDS.has(period);
+}
+
+function periodLabel(period: Period): string {
+  if (isRangePeriod(period)) {
+    return METRICS_RANGES.find((r) => r.id === period)?.label ?? period;
+  }
+  return formatMonthLabel(period);
+}
 
 function sortCategories(cats: Category[]): Category[] {
   return [...cats].sort((a, b) => {
@@ -49,7 +69,7 @@ function TransactionsPageInner() {
   const [transactions, setTransactions] = useState<Tx[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [month, setMonth] = useState(monthKey());
+  const [period, setPeriod] = useState<Period>(monthKey());
   const [accountId, setAccountId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [filterLedger, setFilterLedger] = useState(ledger);
@@ -93,14 +113,21 @@ function TransactionsPageInner() {
     try {
       const params = new URLSearchParams({
         ledger,
-        limit: "200",
+        limit: "500",
       });
       if (needsReview) {
         params.set("needsReview", "1");
         params.set("from", format(subDays(new Date(), 90), "yyyy-MM-dd"));
         params.set("to", format(new Date(), "yyyy-MM-dd"));
+      } else if (isRangePeriod(period)) {
+        if (period !== "all") {
+          const { start, end } = metricsRange(period);
+          params.set("from", toDateParam(start));
+          params.set("to", toDateParam(end));
+        }
+        if (categoryId) params.set("categoryId", categoryId);
       } else {
-        params.set("month", month);
+        params.set("month", period);
         if (categoryId) params.set("categoryId", categoryId);
       }
       if (q.trim()) params.set("q", q.trim());
@@ -131,7 +158,7 @@ function TransactionsPageInner() {
     } finally {
       setLoading(false);
     }
-  }, [ledger, month, accountId, categoryId, needsReview, q]);
+  }, [ledger, period, accountId, categoryId, needsReview, q]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 200);
@@ -213,7 +240,7 @@ function TransactionsPageInner() {
   }
 
   const filterDescription = [
-    needsReview ? "Last 90 days" : formatMonthLabel(month),
+    needsReview ? "Last 90 days" : periodLabel(period),
     ledger === "personal" ? "Personal" : "Business",
     accountId
       ? accounts.find((a) => a.id === accountId)?.name
@@ -225,6 +252,7 @@ function TransactionsPageInner() {
         : categoryId
           ? categories.find((c) => c.id === categoryId)?.name
           : null,
+    q.trim() ? `“${q.trim()}”` : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -238,15 +266,27 @@ function TransactionsPageInner() {
           <div className="flex flex-wrap items-center justify-end gap-2">
             {!needsReview ? (
               <Select
-                value={month}
-                onChange={(e) => setMonth(e.target.value)}
-                aria-label="Month"
+                value={period}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setPeriod(isRangePeriod(v) ? parseMetricsRangeId(v) : v);
+                }}
+                aria-label="Period"
               >
-                {MONTH_OPTIONS.map((m) => (
-                  <option key={m} value={m}>
-                    {formatMonthLabel(m)}
-                  </option>
-                ))}
+                <optgroup label="Range">
+                  {METRICS_RANGES.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.label}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Month">
+                  {MONTH_OPTIONS.map((m) => (
+                    <option key={m} value={m}>
+                      {formatMonthLabel(m)}
+                    </option>
+                  ))}
+                </optgroup>
               </Select>
             ) : null}
             <Select
@@ -288,7 +328,7 @@ function TransactionsPageInner() {
               placeholder="Search…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              className="w-40 sm:w-48"
+              className="w-40 sm:w-56"
             />
           </div>
         }
@@ -319,72 +359,79 @@ function TransactionsPageInner() {
       ) : transactions.length === 0 ? (
         <EmptyState title="No transactions" />
       ) : (
-        <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[640px] text-left text-sm">
-            <thead className="border-b border-[var(--border)] text-[var(--muted)]">
-              <tr>
-                <th className="px-4 py-3 font-medium">Date</th>
-                <th className="px-4 py-3 font-medium">Description</th>
-                <th className="px-4 py-3 font-medium">Category</th>
-                <th className="px-4 py-3 font-medium">Ledger</th>
-                <th className="px-4 py-3 font-medium text-right">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {transactions.map((tx) => (
-                <tr key={tx.id} className="border-b border-[var(--border)] last:border-0">
-                  <td className="px-4 py-3 whitespace-nowrap text-[var(--muted)]">
-                    {formatDate(tx.date)}
-                    {tx.pending ? " · pending" : ""}
-                  </td>
-                  <td className="px-4 py-3">
-                    <p className="font-medium">{tx.merchantName || tx.name}</p>
-                    <p className="text-[var(--muted)]">
-                      {tx.account.name}
-                      {tx.account.mask ? ` ···${tx.account.mask}` : ""}
-                      {tx.categorySource === "user"
-                        ? " · manual"
-                        : tx.categorySource === "rule"
-                          ? " · rule"
-                          : ""}
-                    </p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Select
-                      value={tx.categoryId ?? ""}
-                      onChange={(e) => void onCategoryChange(tx, e.target.value)}
-                    >
-                      <option value="">Uncategorized</option>
-                      {sortedCategories.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Select
-                      value={tx.ledger}
-                      onChange={(e) =>
-                        void updateTx(tx.id, { ledger: e.target.value })
-                      }
-                    >
-                      <option value="personal">Personal</option>
-                      <option value="business">Business</option>
-                    </Select>
-                  </td>
-                  <td
-                    className={`px-4 py-3 text-right tabular-nums ${
-                      tx.amount < 0 ? "text-[var(--positive)]" : ""
-                    }`}
-                  >
-                    {formatSignedCurrency(tx.amount)}
-                  </td>
+        <>
+          {transactions.length >= 500 ? (
+            <p className="mb-3 text-sm text-[var(--muted)]">
+              Showing the 500 most recent matches. Narrow the period or search to see more.
+            </p>
+          ) : null}
+          <Card className="overflow-x-auto p-0">
+            <table className="w-full min-w-[640px] text-left text-sm">
+              <thead className="border-b border-[var(--border)] text-[var(--muted)]">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Date</th>
+                  <th className="px-4 py-3 font-medium">Description</th>
+                  <th className="px-4 py-3 font-medium">Category</th>
+                  <th className="px-4 py-3 font-medium">Ledger</th>
+                  <th className="px-4 py-3 font-medium text-right">Amount</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
+              </thead>
+              <tbody>
+                {transactions.map((tx) => (
+                  <tr key={tx.id} className="border-b border-[var(--border)] last:border-0">
+                    <td className="px-4 py-3 whitespace-nowrap text-[var(--muted)]">
+                      {formatDate(tx.date)}
+                      {tx.pending ? " · pending" : ""}
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="font-medium">{tx.merchantName || tx.name}</p>
+                      <p className="text-[var(--muted)]">
+                        {tx.account.name}
+                        {tx.account.mask ? ` ···${tx.account.mask}` : ""}
+                        {tx.categorySource === "user"
+                          ? " · manual"
+                          : tx.categorySource === "rule"
+                            ? " · rule"
+                            : ""}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Select
+                        value={tx.categoryId ?? ""}
+                        onChange={(e) => void onCategoryChange(tx, e.target.value)}
+                      >
+                        <option value="">Uncategorized</option>
+                        {sortedCategories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Select
+                        value={tx.ledger}
+                        onChange={(e) =>
+                          void updateTx(tx.id, { ledger: e.target.value })
+                        }
+                      >
+                        <option value="personal">Personal</option>
+                        <option value="business">Business</option>
+                      </Select>
+                    </td>
+                    <td
+                      className={`px-4 py-3 text-right tabular-nums ${
+                        tx.amount < 0 ? "text-[var(--positive)]" : ""
+                      }`}
+                    >
+                      {formatSignedCurrency(tx.amount)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </>
       )}
     </div>
   );

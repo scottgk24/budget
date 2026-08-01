@@ -32,6 +32,11 @@ const CashFlowSankey = dynamic(
   () => import("@/components/report-charts").then((m) => m.CashFlowSankey),
   { ssr: false, loading: () => chartFallback },
 );
+const FlexibilityTrendsChart = dynamic(
+  () =>
+    import("@/components/report-charts").then((m) => m.FlexibilityTrendsChart),
+  { ssr: false, loading: () => chartFallback },
+);
 const AgeOfMoneyChart = dynamic(
   () => import("@/components/report-charts").then((m) => m.AgeOfMoneyChart),
   { ssr: false, loading: () => chartFallback },
@@ -43,11 +48,20 @@ type ReportsData = {
     spend: number;
     savings: number;
     savingsRate: number | null;
+    fixed: number;
+    discretionary: number;
+    discretionaryShare: number | null;
   };
   categoryTrends: {
     months: Array<Record<string, string | number>>;
     keys: string[];
   };
+  flexibilityTrends: Array<{
+    key: string;
+    label: string;
+    Fixed: number;
+    Discretionary: number;
+  }>;
   merchants: Array<{
     merchant: string;
     amount: number;
@@ -122,19 +136,45 @@ export default function ReportsPage() {
         <p className="text-[var(--muted)]">Loading…</p>
       ) : data ? (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div
+            className={`grid gap-4 sm:grid-cols-2 ${
+              ledger === "personal" ? "lg:grid-cols-5" : "lg:grid-cols-4"
+            }`}
+          >
             <Card>
               <p className="text-sm text-[var(--muted)]">{copy.income}</p>
               <p className="mt-2 font-display text-2xl">
                 {formatCurrency(data.totals.income)}
               </p>
             </Card>
-            <Card>
-              <p className="text-sm text-[var(--muted)]">{copy.spend}</p>
-              <p className="mt-2 font-display text-2xl">
-                {formatCurrency(data.totals.spend)}
-              </p>
-            </Card>
+            {ledger === "personal" ? (
+              <>
+                <Card>
+                  <p className="text-sm text-[var(--muted)]">Discretionary</p>
+                  <p className="mt-2 font-display text-2xl text-[var(--danger)]">
+                    {formatCurrency(data.totals.discretionary)}
+                  </p>
+                  {data.totals.discretionaryShare != null ? (
+                    <p className="mt-1 text-xs text-[var(--muted)]">
+                      {data.totals.discretionaryShare.toFixed(0)}% of spend
+                    </p>
+                  ) : null}
+                </Card>
+                <Card>
+                  <p className="text-sm text-[var(--muted)]">Fixed</p>
+                  <p className="mt-2 font-display text-2xl">
+                    {formatCurrency(data.totals.fixed)}
+                  </p>
+                </Card>
+              </>
+            ) : (
+              <Card>
+                <p className="text-sm text-[var(--muted)]">{copy.spend}</p>
+                <p className="mt-2 font-display text-2xl">
+                  {formatCurrency(data.totals.spend)}
+                </p>
+              </Card>
+            )}
             <Card>
               <p className="text-sm text-[var(--muted)]">
                 {copy.savings}
@@ -178,7 +218,9 @@ export default function ReportsPage() {
           <Card className="mt-6">
             <h2 className="mb-1 font-display text-lg">Cash flow</h2>
             <p className="mb-4 text-sm text-[var(--muted)]">
-              How income flows into spending categories
+              {ledger === "personal"
+                ? `Income → fixed vs discretionary → categories. Overspend is drawn from ${copy.savings.toLowerCase()}.`
+                : `${copy.income} into categories; spending above ${copy.income.toLowerCase()} is drawn from ${copy.savings.toLowerCase()}`}
             </p>
             {loading ? chartFallback : (
               <CashFlowSankey
@@ -188,10 +230,28 @@ export default function ReportsPage() {
             )}
           </Card>
 
+          {ledger === "personal" ? (
+            <Card className="mt-6">
+              <h2 className="mb-1 font-display text-lg">Fixed vs discretionary</h2>
+              <p className="mb-4 text-sm text-[var(--muted)]">
+                Discretionary is what you can most easily change month to month
+              </p>
+              {loading ? chartFallback : (
+                <FlexibilityTrendsChart data={data.flexibilityTrends} />
+              )}
+            </Card>
+          ) : null}
+
           <Card className="mt-6">
-            <h2 className="mb-1 font-display text-lg">Spending by category</h2>
+            <h2 className="mb-1 font-display text-lg">
+              {ledger === "personal"
+                ? "Discretionary by category"
+                : "Spending by category"}
+            </h2>
             <p className="mb-4 text-sm text-[var(--muted)]">
-              Month-over-month trends for top categories
+              {ledger === "personal"
+                ? "Month-over-month trends for controllable spending"
+                : "Month-over-month trends for top categories"}
             </p>
             {loading ? chartFallback : (
               <CategoryTrendsChart
@@ -205,10 +265,15 @@ export default function ReportsPage() {
             <Card>
               <h2 className="mb-1 font-display text-lg">Top merchants</h2>
               <p className="mb-4 text-sm text-[var(--muted)]">
-                Where the money actually went
+                {ledger === "personal"
+                  ? "Coral = discretionary · olive = fixed"
+                  : "Where the money actually went"}
               </p>
               {loading ? chartFallback : (
-                <MerchantBarChart data={data.merchants} />
+                <MerchantBarChart
+                  data={data.merchants}
+                  colorByFlexibility={ledger === "personal"}
+                />
               )}
             </Card>
             <Card>

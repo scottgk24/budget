@@ -19,6 +19,7 @@ import {
 } from "recharts";
 import { useMoneyFormat } from "@/components/privacy-context";
 import type { SpendPacePoint } from "@/lib/report-types";
+import { personalSpendFlexibility } from "@/lib/categories";
 
 export type { SpendPacePoint };
 
@@ -30,8 +31,39 @@ const COLORS = {
   grid: "#2f5a3c",
   muted: "#8fb396",
   sankeyNode: "#2c5f2b",
+  sankeySavings: "#d4a857",
+  sankeyFixed: "#5c6b46",
+  sankeyDiscretionary: "#d4655a",
   sankeyLink: "#5c6b46",
+  sankeyLinkSavings: "#d4a857",
+  sankeyLinkDiscretionary: "#d4655a",
+  fixed: "#5c6b46",
+  discretionary: "#d4655a",
 };
+
+const SAVINGS_NODE_NAMES = new Set(["Savings", "Profit"]);
+const FLEX_NODE_NAMES = new Set(["Fixed", "Discretionary"]);
+
+function sankeyNodeFill(name: string): string {
+  if (SAVINGS_NODE_NAMES.has(name)) return COLORS.sankeySavings;
+  if (name === "Fixed") return COLORS.sankeyFixed;
+  if (name === "Discretionary") return COLORS.sankeyDiscretionary;
+  return COLORS.sankeyNode;
+}
+
+function sankeyLinkStroke(sourceName: string | undefined): {
+  stroke: string;
+  opacity: number;
+} {
+  if (sourceName && SAVINGS_NODE_NAMES.has(sourceName)) {
+    return { stroke: COLORS.sankeyLinkSavings, opacity: 0.45 };
+  }
+  if (sourceName === "Discretionary") {
+    return { stroke: COLORS.sankeyLinkDiscretionary, opacity: 0.4 };
+  }
+  return { stroke: COLORS.sankeyLink, opacity: 0.35 };
+}
+
 
 const STACK_COLORS = [
   "#2c5f2b",
@@ -207,8 +239,15 @@ export function CategoryTrendsChart({
 
 export function MerchantBarChart({
   data,
+  colorByFlexibility = false,
 }: {
-  data: Array<{ merchant: string; amount: number; count: number }>;
+  data: Array<{
+    merchant: string;
+    amount: number;
+    count: number;
+    categoryName?: string | null;
+  }>;
+  colorByFlexibility?: boolean;
 }) {
   const { formatCompactCurrency, formatCurrency } = useMoneyFormat();
 
@@ -253,21 +292,33 @@ export function MerchantBarChart({
                 merchant: string;
                 amount: number;
                 count: number;
+                categoryName?: string | null;
               };
               return (
                 <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm shadow-sm">
                   <p className="font-medium">{row.merchant}</p>
                   <p className="tabular-nums text-[var(--muted)]">
                     {formatCurrency(row.amount)} · {row.count} tx
+                    {row.categoryName ? ` · ${row.categoryName}` : ""}
                   </p>
                 </div>
               );
             }}
           />
           <Bar dataKey="amount" name="Spend" radius={[0, 4, 4, 0]} maxBarSize={22}>
-            {chartData.map((entry) => (
-              <Cell key={entry.merchant} fill={COLORS.pace} />
-            ))}
+            {chartData.map((entry) => {
+              const flex =
+                colorByFlexibility && entry.categoryName
+                  ? personalSpendFlexibility(entry.categoryName)
+                  : null;
+              const fill =
+                flex === "discretionary"
+                  ? COLORS.discretionary
+                  : flex === "fixed"
+                    ? COLORS.fixed
+                    : COLORS.pace;
+              return <Cell key={entry.merchant} fill={fill} />;
+            })}
           </Bar>
         </BarChart>
       </ResponsiveContainer>
@@ -292,15 +343,44 @@ export function CashFlowSankey({
     );
   }
 
+  const hasFlexLayer = nodes.some((n) => FLEX_NODE_NAMES.has(n.name));
+
   return (
-    <div className="h-80 w-full">
+    <div className={`w-full ${hasFlexLayer ? "h-96" : "h-80"}`}>
       <ResponsiveContainer width="100%" height="100%">
         <Sankey
           data={{ nodes, links }}
-          nodePadding={28}
+          nodePadding={hasFlexLayer ? 18 : 28}
           nodeWidth={12}
-          margin={{ top: 12, right: 160, bottom: 12, left: 16 }}
-          link={{ stroke: COLORS.sankeyLink, strokeOpacity: 0.35 }}
+          margin={{ top: 12, right: 140, bottom: 12, left: 16 }}
+          linkCurvature={0.5}
+          link={(props) => {
+            const {
+              sourceX,
+              targetX,
+              sourceY,
+              targetY,
+              sourceControlX,
+              targetControlX,
+              linkWidth,
+              payload,
+              index,
+            } = props;
+            const sourceName =
+              (payload as { source?: { name?: string } })?.source?.name ??
+              nodes[links[index]?.source]?.name;
+            const { stroke, opacity } = sankeyLinkStroke(sourceName);
+            const d = `M${sourceX},${sourceY}C${sourceControlX},${sourceY} ${targetControlX},${targetY} ${targetX},${targetY}`;
+            return (
+              <path
+                d={d}
+                fill="none"
+                stroke={stroke}
+                strokeOpacity={opacity}
+                strokeWidth={linkWidth}
+              />
+            );
+          }}
           node={(props) => {
             const { x, y, width, height, payload, index } = props;
             const name =
@@ -312,7 +392,7 @@ export function CashFlowSankey({
                   y={y}
                   width={width}
                   height={height}
-                  fill={COLORS.sankeyNode}
+                  fill={sankeyNodeFill(name)}
                   rx={2}
                 />
                 <text
@@ -356,6 +436,70 @@ export function CashFlowSankey({
             }}
           />
         </Sankey>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+export function FlexibilityTrendsChart({
+  data,
+}: {
+  data: Array<{
+    key: string;
+    label: string;
+    Fixed: number;
+    Discretionary: number;
+  }>;
+}) {
+  const { formatCompactCurrency } = useMoneyFormat();
+  const hasData = data.some((d) => d.Fixed > 0 || d.Discretionary > 0);
+
+  if (!hasData) {
+    return (
+      <p className="flex h-72 items-center justify-center text-sm text-[var(--muted)]">
+        No spending in this range.
+      </p>
+    );
+  }
+
+  return (
+    <div className="h-72 w-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          <CartesianGrid stroke={COLORS.grid} strokeDasharray="3 3" vertical={false} />
+          <XAxis
+            dataKey="label"
+            tick={{ fill: COLORS.muted, fontSize: 11 }}
+            tickLine={false}
+            axisLine={{ stroke: COLORS.grid }}
+          />
+          <YAxis
+            tick={{ fill: COLORS.muted, fontSize: 11 }}
+            tickLine={false}
+            axisLine={false}
+            tickFormatter={formatCompactCurrency}
+            width={48}
+          />
+          <Tooltip content={<MoneyTooltip />} />
+          <Legend
+            wrapperStyle={{ fontSize: 11, color: COLORS.muted, paddingTop: 8 }}
+          />
+          <Bar
+            dataKey="Fixed"
+            name="Fixed"
+            stackId="flex"
+            fill={COLORS.fixed}
+            maxBarSize={40}
+          />
+          <Bar
+            dataKey="Discretionary"
+            name="Discretionary"
+            stackId="flex"
+            fill={COLORS.discretionary}
+            radius={[4, 4, 0, 0]}
+            maxBarSize={40}
+          />
+        </BarChart>
       </ResponsiveContainer>
     </div>
   );

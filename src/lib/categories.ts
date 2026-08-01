@@ -133,6 +133,42 @@ export const BUSINESS_CATEGORIES = [
   REVIEW_CATEGORY,
 ] as const;
 
+/**
+ * Personal spend flexibility — what you can cut vs harder-to-change costs.
+ * Unlisted spend categories (Other, Review, Uncategorized) count as discretionary.
+ */
+export const FIXED_PERSONAL_CATEGORIES = [
+  "Housing",
+  "Utilities",
+  "Insurance",
+  "Subscriptions",
+  "Healthcare",
+] as const;
+
+export const DISCRETIONARY_PERSONAL_CATEGORIES = [
+  "Shopping",
+  "Dining",
+  "Groceries",
+  "Entertainment",
+  "Pets",
+  "Home Improvement",
+  "Transport",
+  "Travel",
+  "Gifts",
+] as const;
+
+export type SpendFlexibility = "fixed" | "discretionary";
+
+const FIXED_PERSONAL_SET = new Set<string>(FIXED_PERSONAL_CATEGORIES);
+
+/** Classify a personal spend category. Non-spend names should be filtered first. */
+export function personalSpendFlexibility(
+  categoryName: string | null | undefined,
+): SpendFlexibility {
+  if (categoryName && FIXED_PERSONAL_SET.has(categoryName)) return "fixed";
+  return "discretionary";
+}
+
 export type CategorySource = "plaid" | "rule" | "user";
 
 /** Normalize merchant / description for rule matching (strip IDs, phones, etc.). */

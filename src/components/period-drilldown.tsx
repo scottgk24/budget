@@ -18,6 +18,7 @@ type CategoryRow = {
   spend: number;
   income: number;
   count: number;
+  flexibility?: "fixed" | "discretionary" | null;
 };
 
 type PeriodSummary = {
@@ -26,6 +27,8 @@ type PeriodSummary = {
   start: string;
   end: string;
   spend: number;
+  fixedSpend?: number | null;
+  discretionarySpend?: number | null;
   income: number;
   savings: number;
   transactionCount: number;
@@ -221,13 +224,36 @@ export function PeriodDrilldown({
             <p className="py-8 text-center text-sm text-[var(--muted)]">Loading…</p>
           ) : view === "categories" && summary ? (
             <>
-              <div className="mb-4 grid grid-cols-3 gap-3 text-center">
-                <div>
-                  <p className="text-xs text-[var(--muted)]">{copy.spend}</p>
-                  <p className="mt-1 text-sm font-medium tabular-nums">
-                    {formatCurrency(summary.spend)}
-                  </p>
-                </div>
+              <div
+                className={`mb-4 grid gap-3 text-center ${
+                  ledger === "personal" && summary.discretionarySpend != null
+                    ? "grid-cols-2 sm:grid-cols-4"
+                    : "grid-cols-3"
+                }`}
+              >
+                {ledger === "personal" && summary.discretionarySpend != null ? (
+                  <>
+                    <div>
+                      <p className="text-xs text-[var(--muted)]">Discretionary</p>
+                      <p className="mt-1 text-sm font-medium tabular-nums text-[var(--danger)]">
+                        {formatCurrency(summary.discretionarySpend)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-[var(--muted)]">Fixed</p>
+                      <p className="mt-1 text-sm font-medium tabular-nums">
+                        {formatCurrency(summary.fixedSpend ?? 0)}
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <div>
+                    <p className="text-xs text-[var(--muted)]">{copy.spend}</p>
+                    <p className="mt-1 text-sm font-medium tabular-nums">
+                      {formatCurrency(summary.spend)}
+                    </p>
+                  </div>
+                )}
                 <div>
                   <p className="text-xs text-[var(--muted)]">{copy.income}</p>
                   <p className="mt-1 text-sm font-medium tabular-nums text-[var(--positive)]">
@@ -250,6 +276,78 @@ export function PeriodDrilldown({
                 <p className="py-6 text-center text-sm text-[var(--muted)]">
                   No transactions in this period.
                 </p>
+              ) : ledger === "personal" ? (
+                <div className="space-y-4">
+                  {(
+                    [
+                      {
+                        key: "discretionary",
+                        label: "Discretionary",
+                        rows: summary.categories.filter(
+                          (c) => c.spend > 0 && c.flexibility === "discretionary",
+                        ),
+                        bar: "bg-[var(--danger)]",
+                      },
+                      {
+                        key: "fixed",
+                        label: "Fixed",
+                        rows: summary.categories.filter(
+                          (c) => c.spend > 0 && c.flexibility === "fixed",
+                        ),
+                        bar: "bg-[var(--accent)]",
+                      },
+                      {
+                        key: "other",
+                        label: "Other",
+                        rows: summary.categories.filter(
+                          (c) => c.spend <= 0 || !c.flexibility,
+                        ),
+                        bar: "bg-[var(--accent)]",
+                      },
+                    ] as const
+                  )
+                    .filter((g) => g.rows.length > 0)
+                    .map((group) => (
+                      <div key={group.key}>
+                        <p className="mb-1.5 px-3 text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
+                          {group.label}
+                        </p>
+                        <ul className="space-y-1">
+                          {group.rows.map((row) => (
+                            <li key={row.categoryId ?? `none-${row.name}`}>
+                              <button
+                                type="button"
+                                onClick={() => void openCategory(row)}
+                                className="w-full rounded-lg px-3 py-2.5 text-left transition hover:bg-[var(--bg)]"
+                              >
+                                <div className="flex items-center justify-between gap-3 text-sm">
+                                  <span className="font-medium">{row.name}</span>
+                                  <span className="shrink-0 tabular-nums text-[var(--muted)]">
+                                    {row.spend > 0
+                                      ? formatCurrency(row.spend)
+                                      : row.income > 0
+                                        ? `+${formatCurrency(row.income)}`
+                                        : formatCurrency(0)}
+                                    <span className="ml-2 text-xs">· {row.count}</span>
+                                  </span>
+                                </div>
+                                {row.spend > 0 ? (
+                                  <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-[var(--bg)]">
+                                    <div
+                                      className={`h-full rounded-full ${group.bar}`}
+                                      style={{
+                                        width: `${Math.min(100, (row.spend / maxSpend) * 100)}%`,
+                                      }}
+                                    />
+                                  </div>
+                                ) : null}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                </div>
               ) : (
                 <ul className="space-y-1">
                   {summary.categories.map((row) => (

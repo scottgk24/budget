@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
-import { isIncomeAmount, isSpendAmount } from "@/lib/categories";
+import { isIncomeAmount, isSpendAmount, personalSpendFlexibility } from "@/lib/categories";
 import { prisma } from "@/lib/db";
 import {
   type MetricsGranularity,
@@ -56,11 +56,14 @@ export async function GET(req: Request) {
       spend: number;
       income: number;
       count: number;
+      flexibility: "fixed" | "discretionary" | null;
     };
 
     const byCategory = new Map<string, CatRow>();
     let spend = 0;
     let income = 0;
+    let fixedSpend = 0;
+    let discretionarySpend = 0;
 
     for (const tx of transactions) {
       const name = tx.category?.name ?? "Uncategorized";
@@ -73,6 +76,8 @@ export async function GET(req: Request) {
           spend: 0,
           income: 0,
           count: 0,
+          flexibility:
+            ledger === "personal" ? personalSpendFlexibility(name) : null,
         };
         byCategory.set(mapKey, row);
       }
@@ -81,6 +86,10 @@ export async function GET(req: Request) {
       if (isSpendAmount(tx.amount, tx.category?.name)) {
         row.spend += tx.amount;
         spend += tx.amount;
+        if (ledger === "personal") {
+          if (personalSpendFlexibility(name) === "fixed") fixedSpend += tx.amount;
+          else discretionarySpend += tx.amount;
+        }
       } else if (isIncomeAmount(tx.amount, tx.category?.name)) {
         const abs = Math.abs(tx.amount);
         row.income += abs;
@@ -102,6 +111,8 @@ export async function GET(req: Request) {
       start: bounds.start.toISOString(),
       end: bounds.end.toISOString(),
       spend,
+      fixedSpend: ledger === "personal" ? fixedSpend : null,
+      discretionarySpend: ledger === "personal" ? discretionarySpend : null,
       income,
       savings: income - spend,
       transactionCount: transactions.length,
