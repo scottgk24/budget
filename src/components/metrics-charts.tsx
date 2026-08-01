@@ -52,6 +52,14 @@ const COLORS = {
   selected: "#2c5f2b",
 };
 
+/** Thin vertical guide instead of Recharts' default full-height hover rectangle. */
+const AREA_CURSOR = {
+  stroke: COLORS.muted,
+  strokeWidth: 1,
+  strokeDasharray: "3 3",
+  strokeOpacity: 0.55,
+};
+
 function ChartTooltip({
   active,
   payload,
@@ -167,7 +175,7 @@ export function SpendIncomeChart({
             tickFormatter={formatCompactCurrency}
             width={48}
           />
-          <Tooltip content={<ChartTooltip />} />
+          <Tooltip content={<ChartTooltip />} cursor={AREA_CURSOR} />
           <Legend
             wrapperStyle={{ fontSize: 12, color: COLORS.muted, paddingTop: 8 }}
           />
@@ -179,7 +187,7 @@ export function SpendIncomeChart({
             fill="url(#incomeFill)"
             strokeWidth={2}
             dot={false}
-            activeDot={{ r: 5 }}
+            activeDot={{ r: 5, strokeWidth: 0 }}
           />
           {useSplit ? (
             <>
@@ -192,7 +200,7 @@ export function SpendIncomeChart({
                 fill="url(#fixedFill)"
                 strokeWidth={1.5}
                 dot={false}
-                activeDot={{ r: 4 }}
+                activeDot={{ r: 4, strokeWidth: 0 }}
               />
               <Area
                 type="monotone"
@@ -203,7 +211,7 @@ export function SpendIncomeChart({
                 fill="url(#discFill)"
                 strokeWidth={2}
                 dot={false}
-                activeDot={{ r: 5 }}
+                activeDot={{ r: 5, strokeWidth: 0 }}
               />
             </>
           ) : (
@@ -215,7 +223,7 @@ export function SpendIncomeChart({
               fill="url(#spendFill)"
               strokeWidth={2}
               dot={false}
-              activeDot={{ r: 5 }}
+              activeDot={{ r: 5, strokeWidth: 0 }}
             />
           )}
         </AreaChart>
@@ -266,8 +274,14 @@ export function SavingsChart({
             tickFormatter={formatCompactCurrency}
             width={48}
           />
-          <Tooltip content={<ChartTooltip />} />
-          <Bar dataKey="savings" name={savingsLabel} radius={[4, 4, 0, 0]} maxBarSize={36}>
+          <Tooltip content={<ChartTooltip />} cursor={false} />
+          <Bar
+            dataKey="savings"
+            name={savingsLabel}
+            radius={[4, 4, 0, 0]}
+            maxBarSize={36}
+            activeBar={{ stroke: "#e8f0e4", strokeWidth: 1.5, opacity: 1 }}
+          >
             {data.map((entry) => (
               <Cell
                 key={entry.key}
@@ -332,7 +346,7 @@ export function BalanceChart({ data, onSelectPeriod, selectedKey }: ChartProps) 
             width={52}
             domain={["auto", "auto"]}
           />
-          <Tooltip content={<ChartTooltip />} />
+          <Tooltip content={<ChartTooltip />} cursor={AREA_CURSOR} />
           <Area
             type="monotone"
             dataKey="balance"
@@ -341,7 +355,7 @@ export function BalanceChart({ data, onSelectPeriod, selectedKey }: ChartProps) 
             fill="url(#balanceFill)"
             strokeWidth={2}
             dot={false}
-            activeDot={{ r: 5 }}
+            activeDot={{ r: 5, strokeWidth: 0 }}
           />
         </AreaChart>
       </ResponsiveContainer>

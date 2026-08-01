@@ -63,6 +63,9 @@ function trimFlows(
 /**
  * Business: Income → categories (flat).
  * Personal: Income → Fixed / Discretionary → categories, so controllable spend stands out.
+ *
+ * When spend exceeds income, fund Fixed first from Income, then Discretionary;
+ * Savings only covers the shortfall — avoids Income/Savings ribbons criss-crossing.
  */
 export function buildCashFlowSankey(params: {
   ledger: Ledger;
@@ -83,6 +86,26 @@ export function buildCashFlowSankey(params: {
     return nodes.length - 1;
   };
 
+  /** Draw from Income first; Savings only after Income is exhausted. */
+  const fundFromIncomeThenSavings = (
+    targetIdx: number,
+    amount: number,
+    incomeIdx: number,
+    savingsIdx: number,
+    incomeLeft: { value: number },
+  ) => {
+    if (targetIdx < 0 || amount <= 0) return;
+    const fromIncome = round2(Math.min(amount, Math.max(0, incomeLeft.value)));
+    const fromSavings = round2(amount - fromIncome);
+    if (fromIncome > 0 && incomeIdx >= 0) {
+      links.push({ source: incomeIdx, target: targetIdx, value: fromIncome });
+      incomeLeft.value = round2(incomeLeft.value - fromIncome);
+    }
+    if (fromSavings > 0 && savingsIdx >= 0) {
+      links.push({ source: savingsIdx, target: targetIdx, value: fromSavings });
+    }
+  };
+
   if (ledger !== "personal") {
     const flows = trimFlows(
       [...spendByCat.entries()].map(([name, value]) => ({ name, value })),
@@ -92,18 +115,15 @@ export function buildCashFlowSankey(params: {
     if (deficit > 0 && totalSpend > 0) {
       const incomeIdx = incomeTotal > 0 ? addNode(incomeLabel) : -1;
       const savingsIdx = addNode(savingsLabel);
-      const incomeShare = incomeTotal / totalSpend;
-      const savingsShare = deficit / totalSpend;
+      const incomeLeft = { value: incomeTotal };
       for (const { name, value } of flows) {
-        const idx = addNode(name);
-        const fromIncome = round2(value * incomeShare);
-        const fromSavings = round2(value * savingsShare);
-        if (incomeIdx >= 0 && fromIncome > 0) {
-          links.push({ source: incomeIdx, target: idx, value: fromIncome });
-        }
-        if (fromSavings > 0) {
-          links.push({ source: savingsIdx, target: idx, value: fromSavings });
-        }
+        fundFromIncomeThenSavings(
+          addNode(name),
+          value,
+          incomeIdx,
+          savingsIdx,
+          incomeLeft,
+        );
       }
     } else {
       const incomeIdx = addNode(incomeLabel);
@@ -137,42 +157,40 @@ export function buildCashFlowSankey(params: {
   const fixedTotal = round2(fixedFlows.reduce((s, f) => s + f.value, 0));
   const discTotal = round2(discFlows.reduce((s, f) => s + f.value, 0));
 
-  const incomeIdx = incomeTotal > 0 || surplus > 0 || fixedTotal + discTotal === 0
-    ? addNode(incomeLabel)
-    : -1;
+  const incomeIdx =
+    incomeTotal > 0 || surplus > 0 || fixedTotal + discTotal === 0
+      ? addNode(incomeLabel)
+      : -1;
   const savingsSourceIdx =
     deficit > 0 && totalSpend > 0 ? addNode(savingsLabel) : -1;
 
   const fixedIdx = fixedTotal > 0 ? addNode("Fixed") : -1;
   const discIdx = discTotal > 0 ? addNode("Discretionary") : -1;
 
-  const fundMiddle = (
-    middleIdx: number,
-    middleTotal: number,
-  ) => {
-    if (middleIdx < 0 || middleTotal <= 0 || totalSpend <= 0) return;
-    if (deficit > 0) {
-      const incomeShare = incomeTotal / totalSpend;
-      const savingsShare = deficit / totalSpend;
-      const fromIncome = round2(middleTotal * incomeShare);
-      const fromSavings = round2(middleTotal * savingsShare);
-      if (incomeIdx >= 0 && fromIncome > 0) {
-        links.push({ source: incomeIdx, target: middleIdx, value: fromIncome });
-      }
-      if (savingsSourceIdx >= 0 && fromSavings > 0) {
-        links.push({
-          source: savingsSourceIdx,
-          target: middleIdx,
-          value: fromSavings,
-        });
-      }
-    } else if (incomeIdx >= 0) {
-      links.push({ source: incomeIdx, target: middleIdx, value: middleTotal });
+  if (deficit > 0) {
+    const incomeLeft = { value: incomeTotal };
+    fundFromIncomeThenSavings(
+      fixedIdx,
+      fixedTotal,
+      incomeIdx,
+      savingsSourceIdx,
+      incomeLeft,
+    );
+    fundFromIncomeThenSavings(
+      discIdx,
+      discTotal,
+      incomeIdx,
+      savingsSourceIdx,
+      incomeLeft,
+    );
+  } else if (incomeIdx >= 0) {
+    if (fixedIdx >= 0) {
+      links.push({ source: incomeIdx, target: fixedIdx, value: fixedTotal });
     }
-  };
-
-  fundMiddle(fixedIdx, fixedTotal);
-  fundMiddle(discIdx, discTotal);
+    if (discIdx >= 0) {
+      links.push({ source: incomeIdx, target: discIdx, value: discTotal });
+    }
+  }
 
   const linkCats = (
     middleIdx: number,
@@ -181,7 +199,6 @@ export function buildCashFlowSankey(params: {
     if (middleIdx < 0) return;
     for (const { name, value } of flows) {
       if (value <= 0) continue;
-      // Avoid colliding with middle-layer names.
       const label =
         name === "Fixed" || name === "Discretionary" ? `${name} (other)` : name;
       links.push({ source: middleIdx, target: addNode(label), value });

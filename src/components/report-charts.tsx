@@ -41,6 +41,14 @@ const COLORS = {
   discretionary: "#d4655a",
 };
 
+/** Thin vertical guide instead of Recharts' default full-height hover rectangle. */
+const LINE_CURSOR = {
+  stroke: COLORS.muted,
+  strokeWidth: 1,
+  strokeDasharray: "3 3",
+  strokeOpacity: 0.55,
+};
+
 const SAVINGS_NODE_NAMES = new Set(["Savings", "Profit"]);
 const FLEX_NODE_NAMES = new Set(["Fixed", "Discretionary"]);
 
@@ -141,7 +149,7 @@ export function SpendPaceChart({
             tickFormatter={formatCompactCurrency}
             width={48}
           />
-          <Tooltip content={<MoneyTooltip />} />
+          <Tooltip content={<MoneyTooltip />} cursor={LINE_CURSOR} />
           <Legend
             wrapperStyle={{ fontSize: 12, color: COLORS.muted, paddingTop: 8 }}
           />
@@ -154,6 +162,7 @@ export function SpendPaceChart({
             strokeWidth={2}
             dot={false}
             connectNulls
+            activeDot={false}
           />
           <Line
             type="monotone"
@@ -163,7 +172,7 @@ export function SpendPaceChart({
             strokeWidth={2.5}
             dot={false}
             connectNulls
-            activeDot={{ r: 5 }}
+            activeDot={{ r: 5, strokeWidth: 0 }}
           />
           {budgetTotal > 0 ? (
             <ReferenceLine
@@ -217,7 +226,7 @@ export function CategoryTrendsChart({
             tickFormatter={formatCompactCurrency}
             width={48}
           />
-          <Tooltip content={<MoneyTooltip />} />
+          <Tooltip content={<MoneyTooltip />} cursor={false} />
           <Legend
             wrapperStyle={{ fontSize: 11, color: COLORS.muted, paddingTop: 8 }}
           />
@@ -229,6 +238,7 @@ export function CategoryTrendsChart({
               stackId="spend"
               fill={STACK_COLORS[i % STACK_COLORS.length]}
               maxBarSize={40}
+              activeBar={{ stroke: "#e8f0e4", strokeWidth: 1, opacity: 1 }}
             />
           ))}
         </BarChart>
@@ -286,6 +296,7 @@ export function MerchantBarChart({
             axisLine={false}
           />
           <Tooltip
+            cursor={false}
             content={({ active, payload }) => {
               if (!active || !payload?.length) return null;
               const row = payload[0].payload as {
@@ -305,7 +316,13 @@ export function MerchantBarChart({
               );
             }}
           />
-          <Bar dataKey="amount" name="Spend" radius={[0, 4, 4, 0]} maxBarSize={22}>
+          <Bar
+            dataKey="amount"
+            name="Spend"
+            radius={[0, 4, 4, 0]}
+            maxBarSize={22}
+            activeBar={{ stroke: "#e8f0e4", strokeWidth: 1, opacity: 1 }}
+          >
             {chartData.map((entry) => {
               const flex =
                 colorByFlexibility && entry.categoryName
@@ -480,7 +497,7 @@ export function FlexibilityTrendsChart({
             tickFormatter={formatCompactCurrency}
             width={48}
           />
-          <Tooltip content={<MoneyTooltip />} />
+          <Tooltip content={<MoneyTooltip />} cursor={false} />
           <Legend
             wrapperStyle={{ fontSize: 11, color: COLORS.muted, paddingTop: 8 }}
           />
@@ -490,6 +507,7 @@ export function FlexibilityTrendsChart({
             stackId="flex"
             fill={COLORS.fixed}
             maxBarSize={40}
+            activeBar={{ stroke: "#e8f0e4", strokeWidth: 1, opacity: 1 }}
           />
           <Bar
             dataKey="Discretionary"
@@ -498,6 +516,7 @@ export function FlexibilityTrendsChart({
             fill={COLORS.discretionary}
             radius={[4, 4, 0, 0]}
             maxBarSize={40}
+            activeBar={{ stroke: "#e8f0e4", strokeWidth: 1, opacity: 1 }}
           />
         </BarChart>
       </ResponsiveContainer>
@@ -550,6 +569,7 @@ export function AgeOfMoneyChart({
             unit="d"
           />
           <Tooltip
+            cursor={LINE_CURSOR}
             content={({ active, payload }) => {
               if (!active || !payload?.length) return null;
               const row = payload[0].payload as { date: string; ageDays: number };
@@ -571,6 +591,7 @@ export function AgeOfMoneyChart({
             fill="url(#ageFill)"
             strokeWidth={2}
             dot={false}
+            activeDot={{ r: 5, strokeWidth: 0 }}
           />
         </AreaChart>
       </ResponsiveContainer>
