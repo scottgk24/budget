@@ -54,6 +54,7 @@ type DashboardData = {
   spent: number;
   fixedSpend?: number | null;
   discretionarySpend?: number | null;
+  reserveSpend?: number | null;
   fixedBudget?: number | null;
   discretionaryBudget?: number | null;
   income: number;
@@ -72,6 +73,7 @@ type DashboardData = {
     budget: number | null;
     budgetPeriod?: "monthly" | "annual";
     flexibility?: "fixed" | "discretionary" | null;
+    fundKind?: "committed" | "flexible" | "reserve" | null;
   }>;
   holdings: Array<{
     id: string;
@@ -224,7 +226,7 @@ export default function DashboardPage() {
             </Card>
             <Card>
               <p className="text-sm text-[var(--muted)]">
-                {ledger === "personal" ? "Discretionary" : copy.spentThisMonth}
+                {ledger === "personal" ? "Flexible" : copy.spentThisMonth}
               </p>
               <p className="mt-2 font-display text-2xl">
                 {formatCurrency(
@@ -235,7 +237,11 @@ export default function DashboardPage() {
               </p>
               {ledger === "personal" && data.fixedSpend != null ? (
                 <p className="mt-1 text-xs text-[var(--muted)]">
-                  Fixed {formatCurrency(data.fixedSpend)} · total{" "}
+                  Committed {formatCurrency(data.fixedSpend)}
+                  {data.reserveSpend
+                    ? ` · reserves ${formatCurrency(data.reserveSpend)}`
+                    : ""}
+                  {" · total "}
                   {formatCurrency(data.spent)}
                 </p>
               ) : null}
@@ -270,9 +276,7 @@ export default function DashboardPage() {
                   }`}
                 >
                   {data.spendPace.paceDelta >= 0 ? "Under" : "Over"}{" "}
-                  {data.spendPaceScope === "discretionary"
-                    ? "discretionary "
-                    : ""}
+                  {data.spendPaceScope === "discretionary" ? "flexible " : ""}
                   pace by {formatCurrency(Math.abs(data.spendPace.paceDelta))}
                 </p>
               ) : null}
@@ -288,12 +292,12 @@ export default function DashboardPage() {
                 <div>
                   <h3 className="font-display text-lg">
                     {data.spendPaceScope === "discretionary"
-                      ? "Discretionary pace"
+                      ? "Flexible pace"
                       : "Spend pace"}
                   </h3>
                   <p className="text-sm text-[var(--muted)]">
                     {data.spendPaceScope === "discretionary"
-                      ? "Controllable spend vs ideal burn through the month"
+                      ? "This month’s choices vs leftover after bills and sinking funds"
                       : "Actual cumulative spend vs ideal burn through the month"}
                   </p>
                 </div>
@@ -356,7 +360,7 @@ export default function DashboardPage() {
               {ledger === "personal" ? (
                 <>
                   <Card>
-                    <p className="text-sm text-[var(--muted)]">Discretionary</p>
+                    <p className="text-sm text-[var(--muted)]">Flexible</p>
                     <p className="mt-2 font-display text-xl text-[var(--danger)]">
                       {metricsLoading && !metrics
                         ? "…"
@@ -364,7 +368,7 @@ export default function DashboardPage() {
                     </p>
                   </Card>
                   <Card>
-                    <p className="text-sm text-[var(--muted)]">Fixed</p>
+                    <p className="text-sm text-[var(--muted)]">Committed</p>
                     <p className="mt-2 font-display text-xl">
                       {metricsLoading && !metrics
                         ? "…"
@@ -415,7 +419,7 @@ export default function DashboardPage() {
               <Card>
                 <h3 className="mb-3 font-display text-lg">
                   {ledger === "personal"
-                    ? "Income vs fixed & discretionary"
+                    ? "Income vs committed, flexible & reserves"
                     : copy.incomeVsSpend}
                 </h3>
                 {metricsLoading && !metrics ? (
@@ -510,9 +514,9 @@ export default function DashboardPage() {
                         ? Math.min(100, (row.spent / row.budget) * 100)
                         : null;
                     const barColor =
-                      row.flexibility === "discretionary"
+                      row.fundKind === "flexible"
                         ? "bg-[var(--danger)]"
-                        : row.flexibility === "fixed"
+                        : row.fundKind === "reserve"
                           ? "bg-[var(--accent)]"
                           : "bg-[var(--accent)]";
                     return (
@@ -520,9 +524,13 @@ export default function DashboardPage() {
                         <div className="flex items-center justify-between text-sm">
                           <span>
                             {row.name}
-                            {row.flexibility && ledger === "personal" ? (
+                            {row.fundKind && ledger === "personal" ? (
                               <span className="ml-1.5 text-[11px] text-[var(--muted)]">
-                                {row.flexibility === "discretionary" ? "disc." : "fixed"}
+                                {row.fundKind === "flexible"
+                                  ? "flex"
+                                  : row.fundKind === "reserve"
+                                    ? "reserve"
+                                    : "committed"}
                               </span>
                             ) : null}
                             {annual ? (

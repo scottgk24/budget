@@ -35,6 +35,8 @@ model Workspace {
   invites        Invite[]
   holdings       Holding[]
   goals          Goal[]
+  funds          Fund[]
+  fundCovers     FundCover[]
 }
 
 model Membership {
@@ -118,15 +120,18 @@ model Category {
   icon         String?
   isDefault    Boolean  @default(false)
   // monthly | annual — annual categories use Budget.month = yyyy
-  budgetPeriod String   @default("monthly")
-  createdAt    DateTime @default(now())
+  budgetPeriod  String   @default("monthly")
+  defaultFundId String?
+  createdAt     DateTime @default(now())
 
   workspace    Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  defaultFund  Fund?          @relation("CategoryDefaultFund", fields: [defaultFundId], references: [id], onDelete: SetNull)
   transactions Transaction[]
   budgets      Budget[]
   rules        CategoryRule[]
 
   @@unique([workspaceId, name, ledger])
+  @@index([defaultFundId])
 }
 
 // Learned merchant / name → category mappings.
@@ -168,15 +173,20 @@ model Transaction {
   isoCurrencyCode    String?  @default("USD")
   isInvestment       Boolean  @default(false)
   investmentType     String?
+  fundId             String?
+  // category | user — user keeps the fund when the category changes
+  fundSource         String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
   category  Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  fund      Fund?     @relation(fields: [fundId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId, ledger, date])
   @@index([workspaceId, date])
+  @@index([workspaceId, ledger, fundId])
 }
 
 model Holding {
@@ -232,4 +242,42 @@ model Goal {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, ledger])
+}
+
+// Virtual envelopes: committed / flexible / named reserves / buffer. Personal ledger only.
+model Fund {
+  id                  String   @id @default(cuid())
+  workspaceId         String
+  ledger              String   @default("personal")
+  name                String
+  slug                String
+  kind                String // committed | flexible | reserve | buffer
+  sortOrder           Int      @default(0)
+  monthlyContribution Float    @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  workspace            Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  defaultForCategories Category[]    @relation("CategoryDefaultFund")
+  transactions         Transaction[]
+  covers               FundCover[]
+
+  @@unique([workspaceId, ledger, slug])
+  @@index([workspaceId, ledger])
+}
+
+// Explicit raid of a reserve to cover Flexible overspend.
+model FundCover {
+  id          String   @id @default(cuid())
+  workspaceId String
+  ledger      String
+  month       String
+  fromFundId  String
+  amount      Float
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  fromFund  Fund      @relation(fields: [fromFundId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, ledger, month])
 }

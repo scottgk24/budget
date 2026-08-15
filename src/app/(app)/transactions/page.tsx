@@ -21,6 +21,7 @@ import { merchantRuleKey, OTHER_CATEGORY, REVIEW_CATEGORY } from "@/lib/categori
 
 type Category = { id: string; name: string; ledger: string };
 type Account = { id: string; name: string; mask: string | null };
+type Fund = { id: string; name: string; slug: string; kind: string };
 type Tx = {
   id: string;
   name: string;
@@ -32,6 +33,9 @@ type Tx = {
   pending: boolean;
   categoryId: string | null;
   categorySource: string | null;
+  fundId: string | null;
+  fundSource: string | null;
+  fund: Fund | null;
   category: Category | null;
   account: { name: string; mask: string | null };
 };
@@ -68,6 +72,7 @@ function TransactionsPageInner() {
   const { formatSignedCurrency } = useMoneyFormat();
   const [transactions, setTransactions] = useState<Tx[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [funds, setFunds] = useState<Fund[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [period, setPeriod] = useState<Period>(monthKey());
   const [accountId, setAccountId] = useState("");
@@ -133,10 +138,11 @@ function TransactionsPageInner() {
       if (q.trim()) params.set("q", q.trim());
       if (accountId) params.set("accountId", accountId);
 
-      const [txRes, catRes, acctRes] = await Promise.all([
+      const [txRes, catRes, acctRes, fundRes] = await Promise.all([
         fetch(`/api/transactions?${params}`),
         fetch(`/api/categories?ledger=${ledger}`),
         fetch(`/api/accounts?ledger=${ledger}`),
+        ledger === "personal" ? fetch("/api/funds") : Promise.resolve(null),
       ]);
       const txJson = await txRes.json();
       const catJson = await catRes.json();
@@ -146,6 +152,12 @@ function TransactionsPageInner() {
       if (!acctRes.ok) throw new Error(acctJson.error ?? "Failed to load accounts");
       setTransactions(txJson.transactions);
       setCategories(catJson.categories);
+      if (fundRes) {
+        const fundJson = await fundRes.json();
+        if (fundRes.ok) setFunds(fundJson.funds ?? []);
+      } else {
+        setFunds([]);
+      }
       setAccounts(
         (acctJson.accounts as Account[]).map((a) => ({
           id: a.id,
@@ -372,6 +384,9 @@ function TransactionsPageInner() {
                   <th className="px-4 py-3 font-medium">Date</th>
                   <th className="px-4 py-3 font-medium">Description</th>
                   <th className="px-4 py-3 font-medium">Category</th>
+                  {ledger === "personal" ? (
+                    <th className="px-4 py-3 font-medium">Fund</th>
+                  ) : null}
                   <th className="px-4 py-3 font-medium">Ledger</th>
                   <th className="px-4 py-3 font-medium text-right">Amount</th>
                 </tr>
@@ -408,6 +423,24 @@ function TransactionsPageInner() {
                         ))}
                       </Select>
                     </td>
+                    {ledger === "personal" ? (
+                      <td className="px-4 py-3">
+                        <Select
+                          value={tx.fundId ?? ""}
+                          onChange={(e) =>
+                            void updateTx(tx.id, { fundId: e.target.value || null })
+                          }
+                        >
+                          {funds
+                            .filter((f) => f.kind !== "buffer")
+                            .map((f) => (
+                              <option key={f.id} value={f.id}>
+                                {f.name}
+                              </option>
+                            ))}
+                        </Select>
+                      </td>
+                    ) : null}
                     <td className="px-4 py-3">
                       <Select
                         value={tx.ledger}

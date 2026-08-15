@@ -21,6 +21,7 @@ export type MetricsPoint = {
   spend: number;
   fixedSpend?: number;
   discretionarySpend?: number;
+  reserveSpend?: number;
   income: number;
   savings: number;
   balance?: number;
@@ -42,6 +43,7 @@ const COLORS = {
   spend: "#d4655a",
   fixed: "#5c6b46",
   discretionary: "#d4655a",
+  reserve: "#d4a857",
   income: "#7ec07a",
   savingsPos: "#7ec07a",
   savingsNeg: "#d4655a",
@@ -122,7 +124,10 @@ export function SpendIncomeChart({
   const useSplit =
     splitSpend &&
     data.some(
-      (d) => (d.fixedSpend ?? 0) > 0 || (d.discretionarySpend ?? 0) > 0,
+      (d) =>
+        (d.fixedSpend ?? 0) > 0 ||
+        (d.discretionarySpend ?? 0) > 0 ||
+        (d.reserveSpend ?? 0) > 0,
     );
 
   if (!hasData) {
@@ -157,6 +162,10 @@ export function SpendIncomeChart({
             <linearGradient id="discFill" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={COLORS.discretionary} stopOpacity={0.28} />
               <stop offset="100%" stopColor={COLORS.discretionary} stopOpacity={0.04} />
+            </linearGradient>
+            <linearGradient id="reserveFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={COLORS.reserve} stopOpacity={0.3} />
+              <stop offset="100%" stopColor={COLORS.reserve} stopOpacity={0.04} />
             </linearGradient>
           </defs>
           <CartesianGrid stroke={COLORS.grid} strokeDasharray="3 3" vertical={false} />
@@ -194,7 +203,7 @@ export function SpendIncomeChart({
               <Area
                 type="monotone"
                 dataKey="fixedSpend"
-                name="Fixed"
+                name="Committed"
                 stackId="spend"
                 stroke={COLORS.fixed}
                 fill="url(#fixedFill)"
@@ -204,8 +213,19 @@ export function SpendIncomeChart({
               />
               <Area
                 type="monotone"
+                dataKey="reserveSpend"
+                name="Reserves"
+                stackId="spend"
+                stroke={COLORS.reserve}
+                fill="url(#reserveFill)"
+                strokeWidth={1.5}
+                dot={false}
+                activeDot={{ r: 4, strokeWidth: 0 }}
+              />
+              <Area
+                type="monotone"
                 dataKey="discretionarySpend"
-                name="Discretionary"
+                name="Flexible"
                 stackId="spend"
                 stroke={selectedKey ? COLORS.selected : COLORS.discretionary}
                 fill="url(#discFill)"

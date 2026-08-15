@@ -8,7 +8,7 @@ import {
   type BreakdownTarget,
 } from "@/components/period-drilldown";
 import { HIDDEN_MONEY, useMoneyFormat, usePrivacy } from "@/components/privacy-context";
-import { Card, EmptyState, PageHeader } from "@/components/ui";
+import { Card, EmptyState, PageHeader, Select } from "@/components/ui";
 import {
   cn,
   formatMonthLabel,
@@ -18,7 +18,6 @@ import {
   toDateParam,
 } from "@/lib/format";
 import { ledgerCopy } from "@/lib/ledger-copy";
-import { personalSpendFlexibility } from "@/lib/categories";
 import { getDate, getDayOfYear, getDaysInMonth, getDaysInYear } from "date-fns";
 import type { CategorySlice } from "@/components/budget-charts";
 
@@ -38,8 +37,40 @@ type Category = {
   id: string;
   name: string;
   budgetPeriod?: "monthly" | "annual";
+  defaultFundId?: string | null;
 };
 type Budget = { id: string; categoryId: string; amount: number; category: Category };
+type Fund = {
+  id: string;
+  name: string;
+  slug: string;
+  kind: string;
+  monthlyContribution: number;
+};
+type FundPlan = {
+  income: number;
+  committedNeed: number;
+  flexibleAssigned: number;
+  flexibleSpent: number;
+  carriedOverspend: number;
+  bufferOpening: number;
+  bufferCovered: number;
+  leftoverToBuffer: number;
+  uncoveredOverspend: number;
+  bufferClosing: number;
+  reservesUnderfunded: boolean;
+  funds: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    kind: string;
+    contribution: number;
+    assigned: number;
+    spent: number;
+    opening: number;
+    closing: number;
+  }>;
+};
 
 const SKIP = new Set(["Income", "Transfers", "Review"]);
 
@@ -262,6 +293,9 @@ export default function BudgetsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [breakdown, setBreakdown] = useState<BreakdownTarget | null>(null);
+  const [funds, setFunds] = useState<Fund[]>([]);
+  const [fundPlan, setFundPlan] = useState<FundPlan | null>(null);
+  const [coverFrom, setCoverFrom] = useState("");
 
   const load = useCallback(async () => {
     setError(null);
@@ -272,6 +306,8 @@ export default function BudgetsPage() {
       return;
     }
     setCategories(json.categories);
+    setFunds(json.funds ?? []);
+    setFundPlan(json.fundPlan ?? null);
     setSpentByCategory(json.spentByCategory ?? {});
     setSpentYtdByCategory(json.spentYtdByCategory ?? {});
     setAverageByCategory(json.averageByCategory ?? {});
@@ -294,21 +330,20 @@ export default function BudgetsPage() {
     [categories],
   );
 
-  const discretionaryRows = useMemo(
-    () =>
-      ledger === "personal"
-        ? rows.filter((c) => personalSpendFlexibility(c.name) === "discretionary")
-        : [],
-    [rows, ledger],
-  );
-
-  const fixedRows = useMemo(
-    () =>
-      ledger === "personal"
-        ? rows.filter((c) => personalSpendFlexibility(c.name) === "fixed")
-        : [],
-    [rows, ledger],
-  );
+  const fundGroups = useMemo(() => {
+    if (ledger !== "personal") return [{ fund: null as Fund | null, cats: rows }];
+    const assignable = funds.filter((f) => f.kind !== "buffer");
+    const grouped: Array<{ fund: Fund | null; cats: Category[] }> = assignable.map((fund) => ({
+      fund,
+      cats: rows.filter((c) => c.defaultFundId === fund.id),
+    }));
+    const assigned = new Set(grouped.flatMap((g) => g.cats.map((c) => c.id)));
+    const leftover = rows.filter((c) => !assigned.has(c.id));
+    if (leftover.length > 0) {
+      grouped.push({ fund: null, cats: leftover });
+    }
+    return grouped;
+  }, [rows, funds, ledger]);
 
   const isAnnual = (c: Category) => c.budgetPeriod === "annual";
 
@@ -322,25 +357,12 @@ export default function BudgetsPage() {
     [rows, drafts],
   );
 
-  const discretionaryBudgeted = useMemo(
-    () =>
-      discretionaryRows.reduce((sum, c) => {
-        const amt = drafts[c.id] ?? 0;
-        return sum + (isAnnual(c) ? monthlyAllotment(amt) : amt);
-      }, 0),
-    [discretionaryRows, drafts],
-  );
-
-  const discretionarySpent = useMemo(
-    () =>
-      discretionaryRows.reduce((sum, c) => {
-        if (isAnnual(c)) {
-          return sum + monthlyAllotment(spentYtdByCategory[c.id] ?? 0);
-        }
-        return sum + (spentByCategory[c.id] ?? 0);
-      }, 0),
-    [discretionaryRows, spentByCategory, spentYtdByCategory],
-  );
+  const discretionaryBudgeted = fundPlan?.flexibleAssigned ?? 0;
+  const discretionarySpent = fundPlan?.flexibleSpent ?? 0;
+  const flexibleLeft =
+    (fundPlan?.flexibleAssigned ?? 0) -
+    (fundPlan?.carriedOverspend ?? 0) -
+    (fundPlan?.flexibleSpent ?? 0);
 
   /** Cash that actually left accounts this month (can spike on annual bills). */
   const cashSpentThisMonth = useMemo(
@@ -467,6 +489,83 @@ export default function BudgetsPage() {
     }
   }
 
+  async function setContribution(fundId: string, amount: number) {
+    setSaving(fundId);
+    setError(null);
+    try {
+      const res = await fetch("/api/funds", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          month,
+          monthlyContribution: { fundId, amount: Math.max(0, amount) },
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Failed to save contribution");
+      setFunds(json.funds ?? []);
+      setFundPlan(json.plan ?? null);
+      setNotice("Contribution saved");
+      window.setTimeout(() => setNotice(null), 1500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save contribution");
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function setDefaultFund(categoryId: string, fundId: string) {
+    setSaving(categoryId);
+    setError(null);
+    try {
+      const res = await fetch("/api/funds", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month, defaultFund: { categoryId, fundId } }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Failed to update fund");
+      setFundPlan(json.plan ?? null);
+      setCategories((prev) =>
+        prev.map((c) => (c.id === categoryId ? { ...c, defaultFundId: fundId } : c)),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update fund");
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function coverOverspend() {
+    if (!coverFrom) return;
+    setSaving("cover");
+    setError(null);
+    try {
+      const res = await fetch("/api/funds", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          month,
+          cover: {
+            fromFundId: coverFrom,
+            amount: fundPlan?.uncoveredOverspend ?? 0,
+          },
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Failed to cover overspend");
+      setFunds(json.funds ?? []);
+      setFundPlan(json.plan ?? null);
+      setCoverFrom("");
+      setNotice("Covered from reserve — sinking funds otherwise untouched");
+      window.setTimeout(() => setNotice(null), 2000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to cover overspend");
+    } finally {
+      setSaving(null);
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -476,6 +575,45 @@ export default function BudgetsPage() {
 
       {error ? <p className="mb-4 text-sm text-[var(--danger)]">{error}</p> : null}
       {notice ? <p className="mb-4 text-sm text-[var(--positive)]">{notice}</p> : null}
+
+      {ledger === "personal" && fundPlan && fundPlan.uncoveredOverspend > 0 ? (
+        <Card className="mb-6 border-[var(--danger)]/40">
+          <p className="text-sm font-medium">
+            Flexible is {formatCurrency(fundPlan.uncoveredOverspend)} over
+          </p>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            Reserves still received their contribution. This hole carries into next month’s
+            flexible money unless you cover it from a reserve.
+            {fundPlan.bufferCovered > 0
+              ? ` Buffer already absorbed ${formatCurrency(fundPlan.bufferCovered)}.`
+              : ""}
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Select
+              value={coverFrom}
+              onChange={(e) => setCoverFrom(e.target.value)}
+              aria-label="Cover from reserve"
+            >
+              <option value="">Cover from…</option>
+              {fundPlan.funds
+                .filter((f) => f.kind === "reserve")
+                .map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name} ({formatCurrency(f.closing)})
+                  </option>
+                ))}
+            </Select>
+            <button
+              type="button"
+              disabled={!coverFrom || saving === "cover"}
+              onClick={() => void coverOverspend()}
+              className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-xs font-medium text-[var(--on-accent)] disabled:opacity-50"
+            >
+              Cover overspend
+            </button>
+          </div>
+        </Card>
+      ) : null}
 
       {rows.length === 0 ? (
         <EmptyState title="No categories yet" />
@@ -494,21 +632,27 @@ export default function BudgetsPage() {
             </Card>
             {ledger === "personal" ? (
               <Card>
-                <p className="text-sm text-[var(--muted)]">Discretionary left</p>
+                <p className="text-sm text-[var(--muted)]">Flexible left</p>
                 <p
                   className={`mt-2 font-display text-2xl tabular-nums ${
-                    discretionaryBudgeted - discretionarySpent >= 0
+                    flexibleLeft >= 0
                       ? "text-[var(--positive)]"
                       : "text-[var(--danger)]"
                   }`}
                 >
-                  {discretionaryBudgeted > 0
-                    ? formatCurrency(discretionaryBudgeted - discretionarySpent)
+                  {fundPlan
+                    ? formatCurrency(flexibleLeft)
                     : "—"}
                 </p>
                 <p className="mt-1 text-xs text-[var(--muted)]">
                   {formatCurrency(discretionarySpent)} of{" "}
-                  {formatCurrency(discretionaryBudgeted)} budget
+                  {formatCurrency(
+                    Math.max(0, discretionaryBudgeted - (fundPlan?.carriedOverspend ?? 0)),
+                  )}{" "}
+                  this month
+                  {fundPlan && fundPlan.carriedOverspend > 0
+                    ? ` · ${formatCurrency(fundPlan.carriedOverspend)} from last month`
+                    : ""}
                 </p>
               </Card>
             ) : null}
@@ -621,16 +765,47 @@ export default function BudgetsPage() {
 
             <ul className="space-y-2 p-2 sm:p-2.5">
               {(ledger === "personal"
-                ? [
-                    { label: "Discretionary", cats: discretionaryRows },
-                    { label: "Fixed", cats: fixedRows },
-                  ]
-                : [{ label: null as string | null, cats: rows }]
+                ? fundGroups
+                : [{ fund: null as Fund | null, cats: rows }]
               ).map((group) => (
-                <li key={group.label ?? "all"} className="list-none space-y-2">
-                  {group.label ? (
+                <li key={group.fund?.id ?? "all"} className="list-none space-y-2">
+                  {group.fund ? (
+                    <div className="flex flex-wrap items-end justify-between gap-2 px-2 pt-2 first:pt-0">
+                      <div>
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--muted)]">
+                          {group.fund.name}
+                        </p>
+                        {group.fund.kind === "reserve" && fundPlan ? (
+                          <p className="text-[11px] tabular-nums text-[var(--muted)]">
+                            Balance{" "}
+                            {formatCurrency(
+                              fundPlan.funds.find((f) => f.id === group.fund!.id)?.closing ?? 0,
+                            )}
+                          </p>
+                        ) : group.fund.slug === "flexible" && fundPlan ? (
+                          <p className="text-[11px] tabular-nums text-[var(--muted)]">
+                            Assigned {formatCurrency(fundPlan.flexibleAssigned)} after bills and
+                            sinking
+                          </p>
+                        ) : null}
+                      </div>
+                      {group.fund.kind === "reserve" ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
+                            /mo
+                          </span>
+                          <BudgetAmountInput
+                            value={group.fund.monthlyContribution}
+                            disabled={saving === group.fund.id}
+                            onCommit={(next) => void setContribution(group.fund!.id, next)}
+                            ariaLabel={`${group.fund.name} monthly contribution`}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : ledger === "personal" && group.cats.length > 0 ? (
                     <p className="px-2 pt-2 text-[11px] font-medium uppercase tracking-wide text-[var(--muted)] first:pt-0">
-                      {group.label}
+                      Unassigned
                     </p>
                   ) : null}
                   <ul className="space-y-2">
@@ -800,6 +975,24 @@ export default function BudgetsPage() {
                           </div>
                           {saving === cat.id ? (
                             <span className="text-xs text-[var(--muted)]">Saving…</span>
+                          ) : null}
+                          {ledger === "personal" ? (
+                            <Select
+                              value={cat.defaultFundId ?? ""}
+                              disabled={saving === cat.id}
+                              aria-label={`${cat.name} default fund`}
+                              onChange={(e) => {
+                                if (e.target.value) void setDefaultFund(cat.id, e.target.value);
+                              }}
+                            >
+                              {funds
+                                .filter((f) => f.kind !== "buffer")
+                                .map((f) => (
+                                  <option key={f.id} value={f.id}>
+                                    {f.name}
+                                  </option>
+                                ))}
+                            </Select>
                           ) : null}
                         </div>
 

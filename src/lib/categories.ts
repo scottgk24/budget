@@ -84,6 +84,7 @@ export const DEFAULT_ANNUAL_CATEGORIES_PERSONAL = [
   "Travel",
   "Insurance",
   "Gifts",
+  "Home Improvement",
 ] as const;
 
 export const DEFAULT_ANNUAL_CATEGORIES_BUSINESS = [
@@ -134,9 +135,29 @@ export const BUSINESS_CATEGORIES = [
 ] as const;
 
 /**
- * Personal spend flexibility — what you can cut vs harder-to-change costs.
- * Unlisted spend categories (Other, Review, Uncategorized) count as discretionary.
+ * Default personal fund slug by category name.
+ * Committed = this month is already decided. Flexible = still choosable.
+ * Named slugs are reserves (Home / Travel / Gifts). Unlisted spend → flexible.
  */
+export const DEFAULT_FUND_SLUG_BY_CATEGORY: Record<string, string> = {
+  Housing: "committed",
+  Utilities: "committed",
+  Insurance: "committed",
+  Subscriptions: "committed",
+  Healthcare: "committed",
+  Groceries: "flexible",
+  Dining: "flexible",
+  Entertainment: "flexible",
+  Shopping: "flexible",
+  Pets: "flexible",
+  Transport: "flexible",
+  Other: "flexible",
+  Review: "flexible",
+  "Home Improvement": "home",
+  Travel: "travel",
+  Gifts: "gifts",
+};
+
 export const FIXED_PERSONAL_CATEGORIES = [
   "Housing",
   "Utilities",
@@ -151,22 +172,39 @@ export const DISCRETIONARY_PERSONAL_CATEGORIES = [
   "Groceries",
   "Entertainment",
   "Pets",
-  "Home Improvement",
   "Transport",
-  "Travel",
-  "Gifts",
 ] as const;
 
 export type SpendFlexibility = "fixed" | "discretionary";
+export type FundKind = "committed" | "flexible" | "reserve" | "buffer";
 
-const FIXED_PERSONAL_SET = new Set<string>(FIXED_PERSONAL_CATEGORIES);
+const RESERVE_SLUGS = new Set(["home", "car", "travel", "gifts", "emergency"]);
 
-/** Classify a personal spend category. Non-spend names should be filtered first. */
+/** Default fund slug for a personal spend category. Null for income/transfers. */
+export function defaultFundSlugForCategoryName(
+  categoryName: string | null | undefined,
+): string | null {
+  if (!categoryName) return "flexible";
+  if ((NON_SPEND_CATEGORIES as readonly string[]).includes(categoryName)) {
+    return null;
+  }
+  return DEFAULT_FUND_SLUG_BY_CATEGORY[categoryName] ?? "flexible";
+}
+
+export function fundKindForSlug(slug: string | null | undefined): FundKind | null {
+  if (!slug) return null;
+  if (slug === "committed" || slug === "flexible" || slug === "buffer") return slug;
+  if (RESERVE_SLUGS.has(slug)) return "reserve";
+  return "reserve";
+}
+
+/** @deprecated Prefer transaction.fund / category.defaultFund. */
 export function personalSpendFlexibility(
   categoryName: string | null | undefined,
 ): SpendFlexibility {
-  if (categoryName && FIXED_PERSONAL_SET.has(categoryName)) return "fixed";
-  return "discretionary";
+  const slug = defaultFundSlugForCategoryName(categoryName);
+  if (slug === "flexible" || slug == null) return "discretionary";
+  return "fixed";
 }
 
 export type CategorySource = "plaid" | "rule" | "user";

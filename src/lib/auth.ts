@@ -6,6 +6,7 @@ import {
   defaultBudgetPeriodForName,
   defaultCategoriesForLedger,
 } from "@/lib/categories";
+import { ensureDefaultFunds } from "@/lib/funds";
 import { ensureDemoWorkspace, isDemoRequest } from "@/lib/demo";
 import { isClerkConfigured } from "@/lib/env";
 import { monthKey, yearKey } from "@/lib/format";
@@ -253,6 +254,7 @@ export async function ensureUserAndWorkspace(options?: { inviteToken?: string })
     },
   });
   await seedDefaultCategories(workspace.id);
+  await ensureDefaultFunds(workspace.id);
   membership = await prisma.membership.findFirstOrThrow({
     where: { userId: user.id, workspaceId: workspace.id },
     include: { workspace: true },
@@ -362,6 +364,7 @@ export async function seedDefaultCategories(workspaceId: string): Promise<number
     }
   }
 
+  await ensureDefaultFunds(workspaceId);
   return created;
 }
 

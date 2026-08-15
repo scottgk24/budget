@@ -7,7 +7,7 @@ import {
 } from "date-fns";
 import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
 import { sumNetBalances } from "@/lib/accounts";
-import { isIncomeAmount, isSpendAmount, personalSpendFlexibility } from "@/lib/categories";
+import { isIncomeAmount, isSpendAmount, defaultFundSlugForCategoryName, fundKindForSlug } from "@/lib/categories";
 import { prisma } from "@/lib/db";
 import {
   type MetricsGranularity,
@@ -23,6 +23,7 @@ type Bucket = {
   spend: number;
   fixedSpend: number;
   discretionarySpend: number;
+  reserveSpend: number;
   income: number;
   savings: number;
   balance: number;
@@ -51,6 +52,7 @@ function emptyBuckets(start: Date, end: Date, granularity: MetricsGranularity): 
       spend: 0,
       fixedSpend: 0,
       discretionarySpend: 0,
+      reserveSpend: 0,
       income: 0,
       savings: 0,
       balance: 0,
@@ -89,6 +91,7 @@ export async function GET(req: Request) {
         select: {
           date: true,
           amount: true,
+          fund: { select: { kind: true, slug: true } },
           category: { select: { name: true } },
         },
       }),
@@ -119,11 +122,12 @@ export async function GET(req: Request) {
       if (isSpendAmount(tx.amount, categoryName)) {
         buckets[i].spend += tx.amount;
         if (ledger === "personal") {
-          if (personalSpendFlexibility(categoryName) === "fixed") {
-            buckets[i].fixedSpend += tx.amount;
-          } else {
-            buckets[i].discretionarySpend += tx.amount;
-          }
+          const kind =
+            (tx.fund?.kind as string | undefined) ??
+            fundKindForSlug(defaultFundSlugForCategoryName(categoryName));
+          if (kind === "committed") buckets[i].fixedSpend += tx.amount;
+          else if (kind === "reserve") buckets[i].reserveSpend += tx.amount;
+          else buckets[i].discretionarySpend += tx.amount;
         } else {
           buckets[i].discretionarySpend += tx.amount;
         }
@@ -148,10 +152,11 @@ export async function GET(req: Request) {
         spend: acc.spend + b.spend,
         fixedSpend: acc.fixedSpend + b.fixedSpend,
         discretionarySpend: acc.discretionarySpend + b.discretionarySpend,
+        reserveSpend: acc.reserveSpend + b.reserveSpend,
         income: acc.income + b.income,
         savings: acc.savings + b.savings,
       }),
-      { spend: 0, fixedSpend: 0, discretionarySpend: 0, income: 0, savings: 0 },
+      { spend: 0, fixedSpend: 0, discretionarySpend: 0, reserveSpend: 0, income: 0, savings: 0 },
     );
 
     const savingsRate =

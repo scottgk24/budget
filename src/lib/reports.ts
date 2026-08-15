@@ -5,12 +5,12 @@ import {
   startOfMonth,
 } from "date-fns";
 import {
+  defaultFundSlugForCategoryName,
   excludeNonSpendCategory,
+  fundKindForSlug,
   isIncomeAmount,
   isSpendAmount,
   merchantRuleKey,
-  personalSpendFlexibility,
-  type SpendFlexibility,
 } from "@/lib/categories";
 import { computeAgeOfMoney } from "@/lib/age-of-money";
 import { prisma } from "@/lib/db";
@@ -18,7 +18,14 @@ import { metricsRange, monthKey, type MetricsRangeId } from "@/lib/format";
 import type { SpendPacePoint } from "@/lib/report-types";
 import type { Ledger } from "@/lib/types";
 
-export type { SpendPacePoint };
+function spendBucket(
+  categoryName: string | null | undefined,
+): "committed" | "flexible" | "reserve" {
+  const kind = fundKindForSlug(defaultFundSlugForCategoryName(categoryName));
+  if (kind === "committed") return "committed";
+  if (kind === "reserve") return "reserve";
+  return "flexible";
+}
 
 type SankeyNode = { name: string };
 type SankeyLink = { source: number; target: number; value: number };
@@ -141,72 +148,90 @@ export function buildCashFlowSankey(params: {
     return { nodes, links };
   }
 
-  // Personal: middle Fixed / Discretionary layer, then category detail.
-  const byFlex = new Map<
-    SpendFlexibility,
+  // Personal: Committed / Flexible / Reserves, then categories.
+  const byBucket = new Map<
+    "committed" | "flexible" | "reserve",
     Array<{ name: string; value: number }>
   >([
-    ["fixed", []],
-    ["discretionary", []],
+    ["committed", []],
+    ["flexible", []],
+    ["reserve", []],
   ]);
   for (const [name, value] of spendByCat) {
-    byFlex.get(personalSpendFlexibility(name))!.push({ name, value });
+    byBucket.get(spendBucket(name))!.push({ name, value });
   }
-  const fixedFlows = trimFlows(byFlex.get("fixed")!, 6, 0.04);
-  const discFlows = trimFlows(byFlex.get("discretionary")!, 7, 0.04);
-  const fixedTotal = round2(fixedFlows.reduce((s, f) => s + f.value, 0));
-  const discTotal = round2(discFlows.reduce((s, f) => s + f.value, 0));
+  const committedFlows = trimFlows(byBucket.get("committed")!, 6, 0.04);
+  const flexibleFlows = trimFlows(byBucket.get("flexible")!, 7, 0.04);
+  const reserveFlows = trimFlows(byBucket.get("reserve")!, 5, 0.04);
+  const committedTotal = round2(committedFlows.reduce((s, f) => s + f.value, 0));
+  const flexibleTotal = round2(flexibleFlows.reduce((s, f) => s + f.value, 0));
+  const reserveTotal = round2(reserveFlows.reduce((s, f) => s + f.value, 0));
 
   const incomeIdx =
-    incomeTotal > 0 || surplus > 0 || fixedTotal + discTotal === 0
+    incomeTotal > 0 || surplus > 0 || committedTotal + flexibleTotal + reserveTotal === 0
       ? addNode(incomeLabel)
       : -1;
   const savingsSourceIdx =
     deficit > 0 && totalSpend > 0 ? addNode(savingsLabel) : -1;
 
-  const fixedIdx = fixedTotal > 0 ? addNode("Fixed") : -1;
-  const discIdx = discTotal > 0 ? addNode("Discretionary") : -1;
+  const committedIdx = committedTotal > 0 ? addNode("Committed") : -1;
+  const flexibleIdx = flexibleTotal > 0 ? addNode("Flexible") : -1;
+  const reserveIdx = reserveTotal > 0 ? addNode("Reserves") : -1;
 
   if (deficit > 0) {
     const incomeLeft = { value: incomeTotal };
     fundFromIncomeThenSavings(
-      fixedIdx,
-      fixedTotal,
+      committedIdx,
+      committedTotal,
       incomeIdx,
       savingsSourceIdx,
       incomeLeft,
     );
     fundFromIncomeThenSavings(
-      discIdx,
-      discTotal,
+      flexibleIdx,
+      flexibleTotal,
+      incomeIdx,
+      savingsSourceIdx,
+      incomeLeft,
+    );
+    fundFromIncomeThenSavings(
+      reserveIdx,
+      reserveTotal,
       incomeIdx,
       savingsSourceIdx,
       incomeLeft,
     );
   } else if (incomeIdx >= 0) {
-    if (fixedIdx >= 0) {
-      links.push({ source: incomeIdx, target: fixedIdx, value: fixedTotal });
+    if (committedIdx >= 0) {
+      links.push({ source: incomeIdx, target: committedIdx, value: committedTotal });
     }
-    if (discIdx >= 0) {
-      links.push({ source: incomeIdx, target: discIdx, value: discTotal });
+    if (flexibleIdx >= 0) {
+      links.push({ source: incomeIdx, target: flexibleIdx, value: flexibleTotal });
+    }
+    if (reserveIdx >= 0) {
+      links.push({ source: incomeIdx, target: reserveIdx, value: reserveTotal });
     }
   }
 
   const linkCats = (
     middleIdx: number,
     flows: Array<{ name: string; value: number }>,
+    otherLabel: string,
   ) => {
     if (middleIdx < 0) return;
     for (const { name, value } of flows) {
       if (value <= 0) continue;
       const label =
-        name === "Fixed" || name === "Discretionary" ? `${name} (other)` : name;
+        name === "Committed" || name === "Flexible" || name === "Reserves"
+          ? `${otherLabel} (other)`
+          : name;
       links.push({ source: middleIdx, target: addNode(label), value });
     }
   };
 
-  linkCats(fixedIdx, fixedFlows);
-  linkCats(discIdx, discFlows);
+  linkCats(committedIdx, committedFlows, "Committed");
+  linkCats(flexibleIdx, flexibleFlows, "Flexible");
+  linkCats(reserveIdx, reserveFlows, "Reserves");
 
   if (surplus > 0 && incomeIdx >= 0) {
     links.push({
@@ -221,14 +246,17 @@ export function buildCashFlowSankey(params: {
 
 export function sumSpendByFlexibility(
   spendByCat: Map<string, number>,
-): { fixed: number; discretionary: number } {
+): { fixed: number; discretionary: number; reserve: number } {
   let fixed = 0;
   let discretionary = 0;
+  let reserve = 0;
   for (const [name, value] of spendByCat) {
-    if (personalSpendFlexibility(name) === "fixed") fixed += value;
+    const bucket = spendBucket(name);
+    if (bucket === "committed") fixed += value;
+    else if (bucket === "reserve") reserve += value;
     else discretionary += value;
   }
-  return { fixed: round2(fixed), discretionary: round2(discretionary) };
+  return { fixed: round2(fixed), discretionary: round2(discretionary), reserve: round2(reserve) };
 }
 
 export async function buildSpendPace(params: {
@@ -237,11 +265,17 @@ export async function buildSpendPace(params: {
   month: string;
   budgetTotal: number;
   spentToDate: number;
-  /** Personal: pace only discretionary spend against a discretionary budget. */
+  fundKind?: "all" | "flexible" | "committed" | "reserve";
   flexibility?: "all" | "discretionary" | "fixed";
 }) {
   const { workspaceId, ledger, month, budgetTotal } = params;
-  const flexibility = params.flexibility ?? "all";
+  const fundKind =
+    params.fundKind ??
+    (params.flexibility === "discretionary"
+      ? "flexible"
+      : params.flexibility === "fixed"
+        ? "committed"
+        : "all");
   const start = startOfMonth(new Date(`${month}-01T12:00:00`));
   const end = endOfMonth(start);
   const today = new Date();
@@ -260,6 +294,7 @@ export async function buildSpendPace(params: {
     select: {
       amount: true,
       date: true,
+      fund: { select: { kind: true, slug: true } },
       category: { select: { name: true } },
     },
     orderBy: { date: "asc" },
@@ -267,9 +302,11 @@ export async function buildSpendPace(params: {
 
   const spendByDay = new Map<string, number>();
   for (const tx of txs) {
-    if (flexibility !== "all" && ledger === "personal") {
-      const flex = personalSpendFlexibility(tx.category?.name);
-      if (flex !== flexibility) continue;
+    if (fundKind !== "all" && ledger === "personal") {
+      const kind =
+        (tx.fund?.kind as "committed" | "flexible" | "reserve" | "buffer" | undefined) ??
+        spendBucket(tx.category?.name);
+      if (kind !== fundKind) continue;
     }
     const key = format(tx.date, "yyyy-MM-dd");
     spendByDay.set(key, (spendByDay.get(key) ?? 0) + tx.amount);
@@ -460,7 +497,7 @@ export async function buildReports(params: {
   const flexibility =
     ledger === "personal"
       ? sumSpendByFlexibility(spendByCat)
-      : { fixed: 0, discretionary: round2(totalSpend) };
+      : { fixed: 0, discretionary: round2(totalSpend), reserve: 0 };
   const { nodes: sankeyNodes, links: sankeyLinks } = buildCashFlowSankey({
     ledger,
     incomeTotal,
@@ -472,17 +509,23 @@ export async function buildReports(params: {
     ledger === "personal"
       ? months.map((m) => {
           const monthMap = byMonthCat.get(m)!;
-          let fixed = 0;
-          let discretionary = 0;
+          let committed = 0;
+          let flexible = 0;
+          let reserve = 0;
           for (const [name, amount] of monthMap) {
-            if (personalSpendFlexibility(name) === "fixed") fixed += amount;
-            else discretionary += amount;
+            const bucket = spendBucket(name);
+            if (bucket === "committed") committed += amount;
+            else if (bucket === "reserve") reserve += amount;
+            else flexible += amount;
           }
           return {
             key: m,
             label: format(new Date(`${m}-01T12:00:00`), "MMM yy"),
-            Fixed: round2(fixed),
-            Discretionary: round2(discretionary),
+            Committed: round2(committed),
+            Flexible: round2(flexible),
+            Reserves: round2(reserve),
+            Fixed: round2(committed),
+            Discretionary: round2(flexible),
           };
         })
       : [];
@@ -492,7 +535,7 @@ export async function buildReports(params: {
   let reportCategoryKeys = categoryKeys;
   if (ledger === "personal") {
     const discTop = [...catTotals.entries()]
-      .filter(([name]) => personalSpendFlexibility(name) === "discretionary")
+      .filter(([name]) => spendBucket(name) === "flexible")
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
       .map(([name]) => name);
@@ -505,7 +548,7 @@ export async function buildReports(params: {
       };
       let other = 0;
       for (const [name, amount] of monthMap) {
-        if (personalSpendFlexibility(name) !== "discretionary") continue;
+        if (spendBucket(name) !== "flexible") continue;
         if (discTop.includes(name)) {
           row[name] = Math.round(amount * 100) / 100;
         } else {
@@ -570,6 +613,7 @@ export async function buildReports(params: {
           : null,
       fixed: flexibility.fixed,
       discretionary: flexibility.discretionary,
+      reserve: flexibility.reserve,
       discretionaryShare:
         totalSpend > 0
           ? Math.round((flexibility.discretionary / totalSpend) * 1000) / 10

@@ -969,6 +969,8 @@ async function populateDemoData(workspaceId: string) {
   });
 
   await prisma.transaction.createMany({ data: txRows });
+  const { ensureDefaultFunds } = await import("@/lib/funds");
+  await ensureDefaultFunds(workspaceId);
 
   await prisma.goal.createMany({
     data: [

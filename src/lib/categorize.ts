@@ -5,6 +5,7 @@ import {
   merchantRuleKey,
   normalizeMatchValue,
 } from "@/lib/categories";
+import { loadPersonalFundLookup } from "@/lib/funds";
 import { prisma } from "@/lib/db";
 
 export type CategoryRuleRow = {
@@ -126,11 +127,14 @@ export async function reclassifyUnlockedTransactions(
       plaidCategory: true,
       plaidDetailed: true,
       categoryId: true,
+      fundId: true,
+      fundSource: true,
     },
   });
 
   const rulesByLedger = new Map<string, CategoryRuleRow[]>();
   const categoryIdCache = new Map<string, string | undefined>();
+  let personalFunds: Awaited<ReturnType<typeof loadPersonalFundLookup>> | null = null;
   let updated = 0;
 
   async function idForName(led: Ledger, name: string) {
@@ -160,12 +164,23 @@ export async function reclassifyUnlockedTransactions(
       source = "plaid";
     }
 
-    if (categoryId !== tx.categoryId) {
+    if (categoryId !== tx.categoryId || (led === "personal" && tx.fundSource !== "user")) {
+      let fundData: { fundId?: string | null; fundSource?: string | null } = {};
+      if (led === "personal" && tx.fundSource !== "user") {
+        if (!personalFunds) {
+          personalFunds = await loadPersonalFundLookup(workspaceId);
+        }
+        const fundId = categoryId
+          ? (personalFunds.byCategoryId.get(categoryId) ?? personalFunds.flexibleId)
+          : personalFunds.flexibleId;
+        fundData = { fundId: fundId ?? null, fundSource: fundId ? "category" : null };
+      }
       await prisma.transaction.update({
         where: { id: tx.id },
         data: {
           categoryId: categoryId ?? null,
           categorySource: source,
+          ...fundData,
         },
       });
       updated += 1;
@@ -235,6 +250,19 @@ export async function upsertMerchantRule(opts: {
         data: { categoryId: opts.categoryId, categorySource: "rule" },
       });
       applied = result.count;
+      if (opts.ledger === "personal") {
+        const lookup = await loadPersonalFundLookup(opts.workspaceId);
+        const fundId = lookup.byCategoryId.get(opts.categoryId) ?? lookup.flexibleId;
+        if (fundId) {
+          await prisma.transaction.updateMany({
+            where: {
+              id: { in: ids },
+              OR: [{ fundSource: null }, { fundSource: "category" }],
+            },
+            data: { fundId, fundSource: "category" },
+          });
+        }
+      }
     }
   }
 

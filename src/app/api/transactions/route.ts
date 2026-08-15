@@ -3,12 +3,8 @@ import { z } from "zod";
 import { endOfDay, parseISO, startOfDay } from "date-fns";
 import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
 import { upsertMerchantRule } from "@/lib/categorize";
-import {
-  FIXED_PERSONAL_CATEGORIES,
-  OTHER_CATEGORY,
-  REVIEW_CATEGORY,
-  REVIEW_QUEUE_CATEGORY_NAMES,
-} from "@/lib/categories";
+import { OTHER_CATEGORY, REVIEW_CATEGORY, REVIEW_QUEUE_CATEGORY_NAMES } from "@/lib/categories";
+import { ensureDefaultFunds, fundFieldsForCategoryChange, fundIdForCategory } from "@/lib/funds";
 import { prisma } from "@/lib/db";
 import { monthRange } from "@/lib/format";
 import type { Ledger } from "@/lib/types";
@@ -25,7 +21,7 @@ export async function GET(req: Request) {
     const categoryId = searchParams.get("categoryId")?.trim() || null;
     const categoryName = searchParams.get("categoryName")?.trim() || null;
     const merchant = searchParams.get("merchant")?.trim() || null;
-    const flexibility = searchParams.get("flexibility")?.trim() || null;
+    const fundKind = searchParams.get("fundKind")?.trim() || searchParams.get("flexibility")?.trim() || null;
     const q = searchParams.get("q")?.trim();
     const take = Math.min(Number(searchParams.get("limit") ?? 100), 500);
 
@@ -64,13 +60,29 @@ export async function GET(req: Request) {
       where.categoryId = null;
     } else if (categoryName) {
       where.category = { name: { equals: categoryName, mode: "insensitive" } };
-    } else if (flexibility === "fixed") {
-      where.category = { name: { in: [...FIXED_PERSONAL_CATEGORIES] } };
-    } else if (flexibility === "discretionary") {
-      where.OR = [
-        { categoryId: null },
-        { category: { name: { notIn: [...FIXED_PERSONAL_CATEGORIES] } } },
-      ];
+    } else if (
+      fundKind === "committed" ||
+      fundKind === "flexible" ||
+      fundKind === "reserve" ||
+      fundKind === "fixed" ||
+      fundKind === "discretionary"
+    ) {
+      const kind =
+        fundKind === "fixed"
+          ? "committed"
+          : fundKind === "discretionary"
+            ? "flexible"
+            : fundKind;
+      await ensureDefaultFunds(workspace.id);
+      const funds = await prisma.fund.findMany({
+        where: {
+          workspaceId: workspace.id,
+          ledger: "personal",
+          kind: kind === "reserve" ? "reserve" : kind,
+        },
+        select: { id: true },
+      });
+      where.fundId = { in: funds.map((f) => f.id) };
     }
     if (merchant) {
       const exact = { equals: merchant, mode: "insensitive" as const };
@@ -115,6 +127,7 @@ export async function GET(req: Request) {
       where,
       include: {
         category: true,
+        fund: { select: { id: true, name: true, slug: true, kind: true } },
         account: { select: { id: true, name: true, mask: true, type: true } },
       },
       orderBy: [{ date: "desc" }, { createdAt: "desc" }],
@@ -133,6 +146,7 @@ export async function GET(req: Request) {
 const patchSchema = z.object({
   id: z.string(),
   categoryId: z.string().nullable().optional(),
+  fundId: z.string().nullable().optional(),
   ledger: z.enum(["personal", "business"]).optional(),
   notes: z.string().nullable().optional(),
   /** Persist a merchant → category rule and apply to past matches. */
@@ -161,17 +175,63 @@ export async function PATCH(req: Request) {
       }
     }
 
+    if (body.fundId) {
+      const fund = await prisma.fund.findFirst({
+        where: { id: body.fundId, workspaceId: workspace.id, ledger: "personal" },
+      });
+      if (!fund || fund.kind === "buffer") {
+        return NextResponse.json({ error: "Invalid fund" }, { status: 400 });
+      }
+    }
+
     const categoryChanging = body.categoryId !== undefined;
+    const nextLedger = (body.ledger ?? existing.ledger) as Ledger;
+    const nextCategoryId =
+      body.categoryId === undefined ? existing.categoryId : body.categoryId;
+
+    let fundId: string | null | undefined = undefined;
+    let fundSource: string | null | undefined = undefined;
+    if (body.fundId !== undefined) {
+      fundId = body.fundId;
+      if (body.fundId && nextLedger === "personal") {
+        const defaultId = await fundIdForCategory({
+          workspaceId: workspace.id,
+          ledger: "personal",
+          categoryId: nextCategoryId,
+        });
+        fundSource = body.fundId === defaultId ? "category" : "user";
+      } else {
+        fundSource = null;
+      }
+    } else if (categoryChanging || body.ledger) {
+      const fields = await fundFieldsForCategoryChange({
+        workspaceId: workspace.id,
+        ledger: nextLedger,
+        categoryId: nextCategoryId,
+        currentFundSource: existing.fundSource,
+        currentFundId: existing.fundId,
+      });
+      if ("fundId" in fields) {
+        fundId = fields.fundId;
+        fundSource = fields.fundSource;
+      }
+    }
+
     const transaction = await prisma.transaction.update({
       where: { id: body.id },
       data: {
         categoryId: body.categoryId === undefined ? undefined : body.categoryId,
-        // Lock both assigned categories and intentional Uncategorized against sync.
         categorySource: categoryChanging ? "user" : undefined,
         ledger: body.ledger,
         notes: body.notes === undefined ? undefined : body.notes,
+        fundId,
+        fundSource,
       },
-      include: { category: true, account: true },
+      include: {
+        category: true,
+        fund: { select: { id: true, name: true, slug: true, kind: true } },
+        account: true,
+      },
     });
 
     let ruleApplied: { ruleId: string; applied: number } | null = null;

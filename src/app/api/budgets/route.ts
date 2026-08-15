@@ -3,6 +3,7 @@ import { z } from "zod";
 import { startOfMonth, subMonths } from "date-fns";
 import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
 import { excludeNonSpendCategory, isAnnualBudgetPeriod } from "@/lib/categories";
+import { computeFundMonth, ensureDefaultFunds } from "@/lib/funds";
 import { prisma } from "@/lib/db";
 import {
   monthKey,
@@ -20,6 +21,10 @@ export async function GET(req: Request) {
     const ledger = (searchParams.get("ledger") as "personal" | "business") || "personal";
     const month = searchParams.get("month") || monthKey();
     const year = yearFromPeriod(month);
+
+    if (ledger === "personal") {
+      await ensureDefaultFunds(workspace.id);
+    }
 
     const categories = await prisma.category.findMany({
       where: { workspaceId: workspace.id, ledger },
@@ -115,6 +120,18 @@ export async function GET(req: Request) {
       ]),
     );
 
+    const fundPlan =
+      ledger === "personal"
+        ? await computeFundMonth({ workspaceId: workspace.id, month })
+        : null;
+    const funds =
+      ledger === "personal"
+        ? await prisma.fund.findMany({
+            where: { workspaceId: workspace.id, ledger: "personal" },
+            orderBy: { sortOrder: "asc" },
+          })
+        : [];
+
     return NextResponse.json({
       categories,
       budgets,
@@ -124,6 +141,8 @@ export async function GET(req: Request) {
       averageMonths: AVG_MONTHS,
       month,
       year,
+      funds,
+      fundPlan,
     });
   } catch (err) {
     if (err instanceof AuthError) {

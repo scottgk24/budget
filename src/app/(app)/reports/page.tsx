@@ -59,6 +59,7 @@ type ReportsData = {
     savingsRate: number | null;
     fixed: number;
     discretionary: number;
+    reserve?: number;
     discretionaryShare: number | null;
   };
   categoryTrends: {
@@ -68,8 +69,11 @@ type ReportsData = {
   flexibilityTrends: Array<{
     key: string;
     label: string;
-    Fixed: number;
-    Discretionary: number;
+    Committed?: number;
+    Flexible?: number;
+    Reserves?: number;
+    Fixed?: number;
+    Discretionary?: number;
   }>;
   merchants: Array<{
     merchant: string;
@@ -169,7 +173,7 @@ export default function ReportsPage() {
             {ledger === "personal" ? (
               <>
                 <Card>
-                  <p className="text-sm text-[var(--muted)]">Discretionary</p>
+                  <p className="text-sm text-[var(--muted)]">Flexible</p>
                   <p className="mt-2 font-display text-2xl text-[var(--danger)]">
                     {formatCurrency(data.totals.discretionary)}
                   </p>
@@ -180,7 +184,7 @@ export default function ReportsPage() {
                   ) : null}
                 </Card>
                 <Card>
-                  <p className="text-sm text-[var(--muted)]">Fixed</p>
+                  <p className="text-sm text-[var(--muted)]">Committed</p>
                   <p className="mt-2 font-display text-2xl">
                     {formatCurrency(data.totals.fixed)}
                   </p>
@@ -238,7 +242,7 @@ export default function ReportsPage() {
             <h2 className="mb-1 font-display text-lg">Cash flow</h2>
             <p className="mb-4 text-sm text-[var(--muted)]">
               {ledger === "personal"
-                ? `Income → fixed vs discretionary → categories. Overspend is drawn from ${copy.savings.toLowerCase()}.`
+                ? `Income → committed / flexible / reserves → categories. Overspend is drawn from ${copy.savings.toLowerCase()}.`
                 : `${copy.income} into categories; spending above ${copy.income.toLowerCase()} is drawn from ${copy.savings.toLowerCase()}`}
             </p>
             {loading ? chartFallback : (
@@ -247,14 +251,18 @@ export default function ReportsPage() {
                 links={data.sankey.links}
                 onSelectNode={(nodeName) => {
                   if (!rangeFrom || !rangeTo) return;
-                  if (nodeName === "Fixed" || nodeName === "Discretionary") {
+                  if (nodeName === "Committed" || nodeName === "Flexible" || nodeName === "Reserves" || nodeName === "Fixed" || nodeName === "Discretionary") {
                     setBreakdown({
                       type: "range",
                       title: nodeName,
                       from: rangeFrom,
                       to: rangeTo,
                       flexibility:
-                        nodeName === "Fixed" ? "fixed" : "discretionary",
+                        nodeName === "Committed" || nodeName === "Fixed"
+                          ? "fixed"
+                          : nodeName === "Reserves"
+                            ? "reserve"
+                            : "discretionary",
                     });
                     return;
                   }
@@ -273,9 +281,9 @@ export default function ReportsPage() {
 
           {ledger === "personal" ? (
             <Card className="mt-6">
-              <h2 className="mb-1 font-display text-lg">Fixed vs discretionary</h2>
+              <h2 className="mb-1 font-display text-lg">Committed, flexible & reserves</h2>
               <p className="mb-4 text-sm text-[var(--muted)]">
-                Discretionary is what you can most easily change month to month
+                Flexible is this month’s choices. Reserves are sinking funds (home, travel, gifts).
               </p>
               {loading ? chartFallback : (
                 <FlexibilityTrendsChart
@@ -287,7 +295,11 @@ export default function ReportsPage() {
                       granularity: "monthly",
                       flexibility,
                       title:
-                        flexibility === "fixed" ? "Fixed" : "Discretionary",
+                        flexibility === "fixed"
+                          ? "Committed"
+                          : flexibility === "reserve"
+                            ? "Reserves"
+                            : "Flexible",
                     });
                   }}
                 />
@@ -298,7 +310,7 @@ export default function ReportsPage() {
           <Card className="mt-6">
             <h2 className="mb-1 font-display text-lg">
               {ledger === "personal"
-                ? "Discretionary by category"
+                ? "Flexible by category"
                 : "Spending by category"}
             </h2>
             <p className="mb-4 text-sm text-[var(--muted)]">
@@ -341,7 +353,7 @@ export default function ReportsPage() {
               <h2 className="mb-1 font-display text-lg">Top merchants</h2>
               <p className="mb-4 text-sm text-[var(--muted)]">
                 {ledger === "personal"
-                  ? "Coral = discretionary · olive = fixed"
+                  ? "Coral = flexible · olive = committed · gold = reserves"
                   : "Where the money actually went"}
               </p>
               {loading ? chartFallback : (

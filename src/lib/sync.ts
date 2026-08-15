@@ -5,6 +5,7 @@ import {
   reclassifyUnlockedTransactions,
   type CategoryRuleRow,
 } from "@/lib/categorize";
+import { fundFieldsForCategoryChange } from "@/lib/funds";
 import { prisma } from "@/lib/db";
 import { decryptToken } from "@/lib/crypto";
 import { getPlaidClient } from "@/lib/plaid";
@@ -133,7 +134,15 @@ async function upsertBankTransaction(
 
   const existing = await prisma.transaction.findUnique({
     where: { plaidTransactionId: tx.transaction_id },
-    select: { id: true, categoryId: true, categorySource: true },
+    select: { id: true, categoryId: true, categorySource: true, fundSource: true, fundId: true },
+  });
+
+  const fundFields = await fundFieldsForCategoryChange({
+    workspaceId,
+    ledger,
+    categoryId: resolved.categoryId,
+    currentFundSource: existing?.fundSource,
+    currentFundId: existing?.fundId,
   });
 
   if (!existing) {
@@ -154,6 +163,7 @@ async function upsertBankTransaction(
         plaidDetailed: detailed,
         isoCurrencyCode: tx.iso_currency_code ?? "USD",
         isInvestment: false,
+        ...fundFields,
       },
     });
     return;
@@ -175,6 +185,7 @@ async function upsertBankTransaction(
         : {
             categoryId: resolved.categoryId,
             categorySource: resolved.source,
+            ...fundFields,
           }),
     },
   });

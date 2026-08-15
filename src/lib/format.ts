@@ -70,6 +70,11 @@ export function monthKey(date: Date = new Date()): string {
   return format(date, "yyyy-MM");
 }
 
+/** Previous calendar month key (`yyyy-MM`). */
+export function prevMonthKey(month: string): string {
+  return monthKey(subMonths(parseISO(`${month}-01`), 1));
+}
+
 /** Calendar year key, e.g. "2026". */
 export function yearKey(date: Date = new Date()): string {
   return format(date, "yyyy");

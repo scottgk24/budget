@@ -19,7 +19,7 @@ import {
 } from "recharts";
 import { useMoneyFormat } from "@/components/privacy-context";
 import type { SpendPacePoint } from "@/lib/report-types";
-import { personalSpendFlexibility } from "@/lib/categories";
+import { defaultFundSlugForCategoryName, fundKindForSlug } from "@/lib/categories";
 
 export type { SpendPacePoint };
 
@@ -34,6 +34,8 @@ const COLORS = {
   sankeySavings: "#d4a857",
   sankeyFixed: "#5c6b46",
   sankeyDiscretionary: "#d4655a",
+  sankeyReserve: "#d4a857",
+  sankeyLinkReserve: "#d4a857",
   sankeyLink: "#5c6b46",
   sankeyLinkSavings: "#d4a857",
   sankeyLinkDiscretionary: "#d4655a",
@@ -50,12 +52,13 @@ const LINE_CURSOR = {
 };
 
 const SAVINGS_NODE_NAMES = new Set(["Savings", "Profit"]);
-const FLEX_NODE_NAMES = new Set(["Fixed", "Discretionary"]);
+const FLEX_NODE_NAMES = new Set(["Committed", "Flexible", "Reserves", "Fixed", "Discretionary"]);
 
 function sankeyNodeFill(name: string): string {
   if (SAVINGS_NODE_NAMES.has(name)) return COLORS.sankeySavings;
-  if (name === "Fixed") return COLORS.sankeyFixed;
-  if (name === "Discretionary") return COLORS.sankeyDiscretionary;
+  if (name === "Committed" || name === "Fixed") return COLORS.sankeyFixed;
+  if (name === "Flexible" || name === "Discretionary") return COLORS.sankeyDiscretionary;
+  if (name === "Reserves") return COLORS.sankeyReserve;
   return COLORS.sankeyNode;
 }
 
@@ -66,8 +69,11 @@ function sankeyLinkStroke(sourceName: string | undefined): {
   if (sourceName && SAVINGS_NODE_NAMES.has(sourceName)) {
     return { stroke: COLORS.sankeyLinkSavings, opacity: 0.45 };
   }
-  if (sourceName === "Discretionary") {
+  if (sourceName === "Flexible" || sourceName === "Discretionary") {
     return { stroke: COLORS.sankeyLinkDiscretionary, opacity: 0.4 };
+  }
+  if (sourceName === "Reserves") {
+    return { stroke: COLORS.sankeyLinkReserve, opacity: 0.4 };
   }
   return { stroke: COLORS.sankeyLink, opacity: 0.35 };
 }
@@ -359,16 +365,18 @@ export function MerchantBarChart({
             }}
           >
             {chartData.map((entry) => {
-              const flex =
+              const kind =
                 colorByFlexibility && entry.categoryName
-                  ? personalSpendFlexibility(entry.categoryName)
+                  ? fundKindForSlug(defaultFundSlugForCategoryName(entry.categoryName))
                   : null;
               const fill =
-                flex === "discretionary"
+                kind === "flexible"
                   ? COLORS.discretionary
-                  : flex === "fixed"
+                  : kind === "committed"
                     ? COLORS.fixed
-                    : COLORS.pace;
+                    : kind === "reserve"
+                      ? COLORS.pace
+                      : COLORS.pace;
               return <Cell key={entry.merchant} fill={fill} />;
             })}
           </Bar>
@@ -515,17 +523,25 @@ export function FlexibilityTrendsChart({
   data: Array<{
     key: string;
     label: string;
-    Fixed: number;
-    Discretionary: number;
+    Committed?: number;
+    Flexible?: number;
+    Reserves?: number;
+    Fixed?: number;
+    Discretionary?: number;
   }>;
   onSelect?: (selection: {
     monthKey: string;
     label: string;
-    flexibility: "fixed" | "discretionary";
+    flexibility: "fixed" | "discretionary" | "reserve";
   }) => void;
 }) {
   const { formatCompactCurrency } = useMoneyFormat();
-  const hasData = data.some((d) => d.Fixed > 0 || d.Discretionary > 0);
+  const hasData = data.some(
+    (d) =>
+      (d.Committed ?? d.Fixed ?? 0) > 0 ||
+      (d.Flexible ?? d.Discretionary ?? 0) > 0 ||
+      (d.Reserves ?? 0) > 0,
+  );
 
   if (!hasData) {
     return (
@@ -558,8 +574,8 @@ export function FlexibilityTrendsChart({
             wrapperStyle={{ fontSize: 11, color: COLORS.muted, paddingTop: 8 }}
           />
           <Bar
-            dataKey="Fixed"
-            name="Fixed"
+            dataKey="Committed"
+            name="Committed"
             stackId="flex"
             fill={COLORS.fixed}
             maxBarSize={40}
@@ -580,8 +596,30 @@ export function FlexibilityTrendsChart({
             }}
           />
           <Bar
-            dataKey="Discretionary"
-            name="Discretionary"
+            dataKey="Reserves"
+            name="Reserves"
+            stackId="flex"
+            fill={COLORS.pace}
+            maxBarSize={40}
+            activeBar={{ stroke: "#e8f0e4", strokeWidth: 1, opacity: 1 }}
+            cursor={onSelect ? "pointer" : undefined}
+            onClick={(entry) => {
+              if (!onSelect) return;
+              const row = (
+                entry as { payload?: { key: string; label: string } }
+              ).payload;
+              if (row?.key) {
+                onSelect({
+                  monthKey: row.key,
+                  label: row.label,
+                  flexibility: "reserve",
+                });
+              }
+            }}
+          />
+          <Bar
+            dataKey="Flexible"
+            name="Flexible"
             stackId="flex"
             fill={COLORS.discretionary}
             radius={[4, 4, 0, 0]}

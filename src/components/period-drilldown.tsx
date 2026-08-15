@@ -18,7 +18,8 @@ type CategoryRow = {
   spend: number;
   income: number;
   count: number;
-  flexibility?: "fixed" | "discretionary" | null;
+  flexibility?: "fixed" | "discretionary" | "reserve" | null;
+  fundKind?: "committed" | "flexible" | "reserve" | null;
 };
 
 type PeriodSummary = {
@@ -60,7 +61,7 @@ export type BreakdownTarget =
       periodKey: string;
       granularity: MetricsGranularity;
       /** When set, category list is filtered to this flexibility. */
-      flexibility?: "fixed" | "discretionary";
+      flexibility?: "fixed" | "discretionary" | "reserve";
       title?: string;
     }
   | {
@@ -68,7 +69,7 @@ export type BreakdownTarget =
       title: string;
       from: string;
       to: string;
-      flexibility?: "fixed" | "discretionary";
+      flexibility?: "fixed" | "discretionary" | "reserve";
     }
   | {
       type: "transactions";
@@ -139,7 +140,7 @@ export function BreakdownModal({
       categoryId?: string | null;
       categoryName?: string;
       merchant?: string;
-      flexibility?: "fixed" | "discretionary";
+      flexibility?: "fixed" | "discretionary" | "reserve";
       from: string;
       to: string;
     }) => {
@@ -239,7 +240,7 @@ export function BreakdownModal({
     return { from: toDateParam(start), to: toDateParam(end) };
   }
 
-  function flexibilityForTx(): "fixed" | "discretionary" | undefined {
+  function flexibilityForTx(): "fixed" | "discretionary" | "reserve" | undefined {
     if (!target) return undefined;
     if (target.type === "period" || target.type === "range") {
       return target.flexibility;
@@ -426,18 +427,26 @@ export function BreakdownModal({
                   {(
                     [
                       {
-                        key: "discretionary",
-                        label: "Discretionary",
+                        key: "flexible",
+                        label: "Flexible",
                         rows: summary.categories.filter(
-                          (c) => c.spend > 0 && c.flexibility === "discretionary",
+                          (c) => c.spend > 0 && (c.fundKind === "flexible" || c.flexibility === "discretionary"),
                         ),
                         bar: "bg-[var(--danger)]",
                       },
                       {
-                        key: "fixed",
-                        label: "Fixed",
+                        key: "committed",
+                        label: "Committed",
                         rows: summary.categories.filter(
-                          (c) => c.spend > 0 && c.flexibility === "fixed",
+                          (c) => c.spend > 0 && (c.fundKind === "committed" || c.flexibility === "fixed"),
+                        ),
+                        bar: "bg-[var(--accent)]",
+                      },
+                      {
+                        key: "reserve",
+                        label: "Reserves",
+                        rows: summary.categories.filter(
+                          (c) => c.spend > 0 && c.fundKind === "reserve",
                         ),
                         bar: "bg-[var(--accent)]",
                       },
@@ -445,7 +454,7 @@ export function BreakdownModal({
                         key: "other",
                         label: "Other",
                         rows: summary.categories.filter(
-                          (c) => c.spend <= 0 || !c.flexibility,
+                          (c) => c.spend <= 0 || (!c.flexibility && !c.fundKind),
                         ),
                         bar: "bg-[var(--accent)]",
                       },

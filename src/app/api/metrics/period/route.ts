@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { endOfDay, format, parseISO, startOfDay } from "date-fns";
 import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
-import { isIncomeAmount, isSpendAmount, personalSpendFlexibility } from "@/lib/categories";
+import { isIncomeAmount, isSpendAmount, defaultFundSlugForCategoryName, fundKindForSlug } from "@/lib/categories";
 import { prisma } from "@/lib/db";
 import {
   type MetricsGranularity,
@@ -25,7 +25,7 @@ export async function GET(req: Request) {
     const key = searchParams.get("key")?.trim();
     const fromParam = searchParams.get("from")?.trim();
     const toParam = searchParams.get("to")?.trim();
-    const flexibilityFilter = searchParams.get("flexibility")?.trim();
+    const fundKindFilter = searchParams.get("fundKind")?.trim() || searchParams.get("flexibility")?.trim();
 
     let bounds: { start: Date; end: Date; label: string };
     let resolvedKey: string | null = key ?? null;
@@ -73,6 +73,7 @@ export async function GET(req: Request) {
         amount: true,
         categoryId: true,
         category: { select: { id: true, name: true } },
+        fund: { select: { kind: true, slug: true } },
       },
     });
 
@@ -82,6 +83,7 @@ export async function GET(req: Request) {
       spend: number;
       income: number;
       count: number;
+      fundKind: "committed" | "flexible" | "reserve" | null;
       flexibility: "fixed" | "discretionary" | null;
     };
 
@@ -90,10 +92,17 @@ export async function GET(req: Request) {
     let income = 0;
     let fixedSpend = 0;
     let discretionarySpend = 0;
+    let reserveSpend = 0;
 
     for (const tx of transactions) {
       const name = tx.category?.name ?? "Uncategorized";
       const mapKey = tx.categoryId ?? "none";
+      const kind =
+        ledger === "personal"
+          ? ((tx.fund?.kind as "committed" | "flexible" | "reserve" | undefined) ??
+            fundKindForSlug(defaultFundSlugForCategoryName(name)) ??
+            "flexible")
+          : null;
       let row = byCategory.get(mapKey);
       if (!row) {
         row = {
@@ -102,8 +111,9 @@ export async function GET(req: Request) {
           spend: 0,
           income: 0,
           count: 0,
+          fundKind: kind === "buffer" ? "flexible" : kind,
           flexibility:
-            ledger === "personal" ? personalSpendFlexibility(name) : null,
+            kind === "committed" ? "fixed" : kind === "flexible" ? "discretionary" : null,
         };
         byCategory.set(mapKey, row);
       }
@@ -113,7 +123,8 @@ export async function GET(req: Request) {
         row.spend += tx.amount;
         spend += tx.amount;
         if (ledger === "personal") {
-          if (personalSpendFlexibility(name) === "fixed") fixedSpend += tx.amount;
+          if (kind === "committed") fixedSpend += tx.amount;
+          else if (kind === "reserve") reserveSpend += tx.amount;
           else discretionarySpend += tx.amount;
         }
       } else if (isIncomeAmount(tx.amount, tx.category?.name)) {
@@ -129,13 +140,25 @@ export async function GET(req: Request) {
       return bTotal - aTotal;
     });
 
+    const normalizedFilter =
+      fundKindFilter === "fixed"
+        ? "committed"
+        : fundKindFilter === "discretionary"
+          ? "flexible"
+          : fundKindFilter;
+
     if (
-      flexibilityFilter === "fixed" ||
-      flexibilityFilter === "discretionary"
+      normalizedFilter === "committed" ||
+      normalizedFilter === "flexible" ||
+      normalizedFilter === "reserve"
     ) {
-      categories = categories.filter((c) => c.flexibility === flexibilityFilter);
+      categories = categories.filter((c) => c.fundKind === normalizedFilter);
       spend =
-        flexibilityFilter === "fixed" ? fixedSpend : discretionarySpend;
+        normalizedFilter === "committed"
+          ? fixedSpend
+          : normalizedFilter === "reserve"
+            ? reserveSpend
+            : discretionarySpend;
       income = categories.reduce((sum, c) => sum + c.income, 0);
     }
 
@@ -151,6 +174,7 @@ export async function GET(req: Request) {
       spend,
       fixedSpend: ledger === "personal" ? fixedSpend : null,
       discretionarySpend: ledger === "personal" ? discretionarySpend : null,
+      reserveSpend: ledger === "personal" ? reserveSpend : null,
       income,
       savings: income - spend,
       transactionCount,
