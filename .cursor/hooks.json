@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": ".cursor/hooks/qa-gate.mjs",
+        "matcher": "git commit|git push|vercel",
+        "timeout": 20
+      }
+    ],
+    "afterShellExecution": [
+      {
+        "command": ".cursor/hooks/qa-gate.mjs --after",
+        "matcher": "git commit",
+        "timeout": 20
+      }
+    ]
+  }
+}

@@ -50,6 +50,9 @@ Monarch-Money-Budget-scaled.jpeg
 # vercel
 .vercel
 
+# QA agent pass stamp (local working-tree fingerprint)
+.qa-stamp.json
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
