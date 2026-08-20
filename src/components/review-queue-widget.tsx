@@ -158,7 +158,7 @@ export function ReviewQueueWidget({
               <p className="mt-0.5 text-xs text-[var(--muted)]">
                 {total === 0
                   ? "Queue is clear"
-                  : `${total} in Review, Uncategorized, or Other`}
+                  : `${total} uncategorized, parked in Review, or Other`}
               </p>
             </div>
             <Link

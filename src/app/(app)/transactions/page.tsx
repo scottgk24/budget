@@ -58,9 +58,11 @@ function periodLabel(period: Period): string {
 }
 
 function sortCategories(cats: Category[]): Category[] {
+  const parking = new Set([REVIEW_CATEGORY, OTHER_CATEGORY]);
   return [...cats].sort((a, b) => {
-    if (a.name === REVIEW_CATEGORY) return -1;
-    if (b.name === REVIEW_CATEGORY) return 1;
+    const ap = parking.has(a.name) ? 1 : 0;
+    const bp = parking.has(b.name) ? 1 : 0;
+    if (ap !== bp) return ap - bp;
     return a.name.localeCompare(b.name);
   });
 }
@@ -110,6 +112,13 @@ function TransactionsPageInner() {
   const sortedCategories = useMemo(
     () => sortCategories(categories),
     [categories],
+  );
+  const filterCategories = useMemo(
+    () =>
+      sortedCategories.filter(
+        (c) => c.name !== REVIEW_CATEGORY && c.name !== OTHER_CATEGORY,
+      ),
+    [sortedCategories],
   );
 
   const load = useCallback(async () => {
@@ -328,9 +337,9 @@ function TransactionsPageInner() {
               aria-label="Category"
             >
               <option value="">All categories</option>
-              <option value="needsReview">Needs review</option>
+              <option value="needsReview">Needs review (queue)</option>
               <option value="none">Uncategorized</option>
-              {sortedCategories.map((c) => (
+              {filterCategories.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
@@ -418,7 +427,9 @@ function TransactionsPageInner() {
                         <option value="">Uncategorized</option>
                         {sortedCategories.map((c) => (
                           <option key={c.id} value={c.id}>
-                            {c.name}
+                            {c.name === REVIEW_CATEGORY
+                              ? "Review (unsure)"
+                              : c.name}
                           </option>
                         ))}
                       </Select>

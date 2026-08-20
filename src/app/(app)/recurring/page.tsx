@@ -6,7 +6,7 @@ import { useMoneyFormat } from "@/components/privacy-context";
 import { Card, PageHeader } from "@/components/ui";
 import { formatDate, monthKey } from "@/lib/format";
 import { ledgerLabel } from "@/lib/ledger-copy";
-import type { RecurringCadence } from "@/lib/recurring";
+import { occurrencesInMonth, type RecurringCadence } from "@/lib/recurring";
 
 type RecurringItem = {
   key: string;
@@ -39,10 +39,6 @@ const CADENCE_LABEL: Record<RecurringCadence, string> = {
   quarterly: "Quarterly",
   yearly: "Yearly",
 };
-
-function dayKey(iso: string): string {
-  return iso.slice(0, 10);
-}
 
 function RecurringListSection({
   title,
@@ -114,22 +110,27 @@ export default function RecurringPage() {
     void load();
   }, [load]);
 
+  const todayKey = `${month}-${String(new Date().getDate()).padStart(2, "0")}`;
+
   const calendarDays = useMemo(() => {
     if (!data) return [];
     const [y, m] = month.split("-").map(Number);
     const daysInMonth = new Date(y, m, 0).getDate();
     const byDay = new Map<string, RecurringItem[]>();
     for (const item of data.items) {
-      const key = dayKey(item.nextDate);
-      if (!key.startsWith(month)) continue;
-      const list = byDay.get(key) ?? [];
-      list.push(item);
-      byDay.set(key, list);
+      for (const key of occurrencesInMonth(item, month)) {
+        const list = byDay.get(key) ?? [];
+        list.push(item);
+        byDay.set(key, list);
+      }
     }
     return Array.from({ length: daysInMonth }, (_, i) => {
       const day = i + 1;
       const key = `${month}-${String(day).padStart(2, "0")}`;
-      return { day, key, items: byDay.get(key) ?? [] };
+      const items = [...(byDay.get(key) ?? [])].sort(
+        (a, b) => b.averageAmount - a.averageAmount,
+      );
+      return { day, key, items };
     });
   }, [data, month]);
 
@@ -176,7 +177,7 @@ export default function RecurringPage() {
           <Card className="mt-6">
             <h2 className="mb-1 font-display text-lg">This month</h2>
             <p className="mb-4 text-sm text-[var(--muted)]">
-              Expected next charges on the calendar
+              Known recurring charges this month — already paid and still due
             </p>
             <div className="grid grid-cols-7 gap-1 text-center text-xs text-[var(--muted)]">
               {["M", "T", "W", "T", "F", "S", "S"].map((d) => (
@@ -193,34 +194,43 @@ export default function RecurringPage() {
                 return (
                   <>
                     {blanks}
-                    {calendarDays.map((d) => (
-                      <div
-                        key={d.key}
-                        className={`min-h-14 rounded-lg border p-1 ${
-                          d.items.length
-                            ? "border-[var(--gold)] bg-[var(--accent-soft)]"
-                            : "border-transparent"
-                        }`}
-                      >
-                        <div className="text-[11px] text-[var(--muted)]">
-                          {d.day}
+                    {calendarDays.map((d) => {
+                      const paid = d.key < todayKey;
+                      return (
+                        <div
+                          key={d.key}
+                          className={`min-h-14 rounded-lg border p-1 ${
+                            d.items.length
+                              ? paid
+                                ? "border-[var(--border)] bg-[var(--surface)]"
+                                : "border-[var(--gold)] bg-[var(--accent-soft)]"
+                              : "border-transparent"
+                          }`}
+                        >
+                          <div className="text-[11px] text-[var(--muted)]">
+                            {d.day}
+                          </div>
+                          {d.items.slice(0, 2).map((item) => (
+                            <div
+                              key={item.key}
+                              className={`truncate text-[10px] leading-tight ${
+                                paid ? "text-[var(--muted)]" : "text-[var(--fg)]"
+                              }`}
+                              title={`${item.merchant} ${formatCurrency(item.averageAmount)}${
+                                paid ? " · paid" : " · due"
+                              }`}
+                            >
+                              {item.merchant}
+                            </div>
+                          ))}
+                          {d.items.length > 2 ? (
+                            <div className="text-[10px] text-[var(--muted)]">
+                              +{d.items.length - 2}
+                            </div>
+                          ) : null}
                         </div>
-                        {d.items.slice(0, 2).map((item) => (
-                          <div
-                            key={item.key}
-                            className="truncate text-[10px] leading-tight text-[var(--fg)]"
-                            title={`${item.merchant} ${formatCurrency(item.averageAmount)}`}
-                          >
-                            {item.merchant}
-                          </div>
-                        ))}
-                        {d.items.length > 2 ? (
-                          <div className="text-[10px] text-[var(--muted)]">
-                            +{d.items.length - 2}
-                          </div>
-                        ) : null}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </>
                 );
               })()}

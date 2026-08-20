@@ -6,7 +6,6 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   Legend,
   Line,
   LineChart,
@@ -19,7 +18,6 @@ import {
 } from "recharts";
 import { useMoneyFormat } from "@/components/privacy-context";
 import type { SpendPacePoint } from "@/lib/report-types";
-import { defaultFundSlugForCategoryName, fundKindForSlug } from "@/lib/categories";
 
 export type { SpendPacePoint };
 
@@ -260,126 +258,6 @@ export function CategoryTrendsChart({
               }}
             />
           ))}
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
-export function MerchantBarChart({
-  data,
-  colorByFlexibility = false,
-  onSelect,
-}: {
-  data: Array<{
-    merchant: string;
-    amount: number;
-    count: number;
-    categoryName?: string | null;
-  }>;
-  colorByFlexibility?: boolean;
-  onSelect?: (row: {
-    merchant: string;
-    amount: number;
-    count: number;
-    categoryName?: string | null;
-  }) => void;
-}) {
-  const { formatCompactCurrency, formatCurrency } = useMoneyFormat();
-
-  if (data.length === 0) {
-    return (
-      <p className="flex h-72 items-center justify-center text-sm text-[var(--muted)]">
-        No merchant spending in this range.
-      </p>
-    );
-  }
-
-  const chartData = [...data].reverse();
-
-  return (
-    <div className={`h-80 w-full ${onSelect ? "cursor-pointer" : ""}`}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart
-          data={chartData}
-          layout="vertical"
-          margin={{ top: 8, right: 16, left: 8, bottom: 0 }}
-        >
-          <CartesianGrid stroke={COLORS.grid} strokeDasharray="3 3" horizontal={false} />
-          <XAxis
-            type="number"
-            tick={{ fill: COLORS.muted, fontSize: 11 }}
-            tickLine={false}
-            axisLine={false}
-            tickFormatter={formatCompactCurrency}
-          />
-          <YAxis
-            type="category"
-            dataKey="merchant"
-            width={110}
-            tick={{ fill: COLORS.muted, fontSize: 11 }}
-            tickLine={false}
-            axisLine={false}
-          />
-          <Tooltip
-            cursor={false}
-            content={({ active, payload }) => {
-              if (!active || !payload?.length) return null;
-              const row = payload[0].payload as {
-                merchant: string;
-                amount: number;
-                count: number;
-                categoryName?: string | null;
-              };
-              return (
-                <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm shadow-sm">
-                  <p className="font-medium">{row.merchant}</p>
-                  <p className="tabular-nums text-[var(--muted)]">
-                    {formatCurrency(row.amount)} · {row.count} tx
-                    {row.categoryName ? ` · ${row.categoryName}` : ""}
-                  </p>
-                </div>
-              );
-            }}
-          />
-          <Bar
-            dataKey="amount"
-            name="Spend"
-            radius={[0, 4, 4, 0]}
-            maxBarSize={22}
-            activeBar={{ stroke: "#e8f0e4", strokeWidth: 1, opacity: 1 }}
-            cursor={onSelect ? "pointer" : undefined}
-            onClick={(entry) => {
-              if (!onSelect) return;
-              const row = (
-                entry as {
-                  payload?: {
-                    merchant: string;
-                    amount: number;
-                    count: number;
-                    categoryName?: string | null;
-                  };
-                }
-              ).payload;
-              if (row?.merchant) onSelect(row);
-            }}
-          >
-            {chartData.map((entry) => {
-              const kind =
-                colorByFlexibility && entry.categoryName
-                  ? fundKindForSlug(defaultFundSlugForCategoryName(entry.categoryName))
-                  : null;
-              const fill =
-                kind === "flexible"
-                  ? COLORS.discretionary
-                  : kind === "committed"
-                    ? COLORS.fixed
-                    : kind === "reserve"
-                      ? COLORS.pace
-                      : COLORS.pace;
-              return <Cell key={entry.merchant} fill={fill} />;
-            })}
-          </Bar>
         </BarChart>
       </ResponsiveContainer>
     </div>

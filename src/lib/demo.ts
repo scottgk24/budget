@@ -40,6 +40,18 @@ type SeedTx = {
   ledger: "personal" | "business";
 };
 
+/** Four (or `count`) monthly charges ending at `latestDaysAgo`. */
+function monthlyCharges(
+  base: Omit<SeedTx, "daysAgo">,
+  latestDaysAgo: number,
+  count = 4,
+): SeedTx[] {
+  return Array.from({ length: count }, (_, i) => ({
+    ...base,
+    daysAgo: latestDaysAgo + i * 30,
+  }));
+}
+
 function buildSeedTransactions(): SeedTx[] {
   return [
     // Personal — current month
@@ -326,6 +338,16 @@ function buildSeedTransactions(): SeedTx[] {
     },
     {
       accountKey: "chase-checking",
+      daysAgo: 15,
+      amount: 144.8,
+      name: "PG&E UTILITY",
+      merchantName: "PG&E",
+      categoryName: "Utilities",
+      categorySource: "rule",
+      ledger: "personal",
+    },
+    {
+      accountKey: "chase-checking",
       daysAgo: 45,
       amount: 142.55,
       name: "PG&E UTILITY",
@@ -354,6 +376,30 @@ function buildSeedTransactions(): SeedTx[] {
       categorySource: "rule",
       ledger: "personal",
     },
+    ...monthlyCharges(
+      {
+        accountKey: "chase-checking",
+        amount: 89.99,
+        name: "XFINITY INTERNET",
+        merchantName: "Xfinity",
+        categoryName: "Utilities",
+        categorySource: "rule",
+        ledger: "personal",
+      },
+      27,
+    ),
+    ...monthlyCharges(
+      {
+        accountKey: "amex",
+        amount: 24.99,
+        name: "PLANET FITNESS",
+        merchantName: "Planet Fitness",
+        categoryName: "Subscriptions",
+        categorySource: "rule",
+        ledger: "personal",
+      },
+      16,
+    ),
     {
       accountKey: "amex",
       daysAgo: 8,
@@ -627,16 +673,18 @@ function buildSeedTransactions(): SeedTx[] {
       categorySource: "user",
       ledger: "business",
     },
-    {
-      accountKey: "biz-checking",
-      daysAgo: 45,
-      amount: 99,
-      name: "GITHUB TEAM",
-      merchantName: "GitHub",
-      categoryName: "Software",
-      categorySource: "rule",
-      ledger: "business",
-    },
+    ...monthlyCharges(
+      {
+        accountKey: "biz-checking",
+        amount: 99,
+        name: "GITHUB TEAM",
+        merchantName: "GitHub",
+        categoryName: "Software",
+        categorySource: "rule",
+        ledger: "business",
+      },
+      15,
+    ),
     {
       accountKey: "biz-checking",
       daysAgo: 72,
@@ -654,7 +702,7 @@ const PERSONAL_BUDGETS: Record<string, number> = {
   Groceries: 650,
   Dining: 350,
   Housing: 2200,
-  Utilities: 180,
+  Utilities: 250,
   "Home Improvement": 150,
   Transport: 220,
   Healthcare: 120,

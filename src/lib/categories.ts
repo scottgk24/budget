@@ -7,7 +7,9 @@ import type { Prisma } from "@prisma/client";
  */
 export const TRANSFER_CATEGORY = "Transfers";
 
-/** Manual parking category — needs a human, never auto-mapped from Plaid. */
+/** Parking lot for charges a human should classify. Never auto-mapped from Plaid.
+ *  Distinct from the "Needs review" *queue*, which is this category plus Other
+ *  plus uncategorized. */
 export const REVIEW_CATEGORY = "Review";
 
 /** Catch-all from Plaid mapping; included in the review queue. */

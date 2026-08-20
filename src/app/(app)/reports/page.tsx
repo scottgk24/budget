@@ -10,6 +10,7 @@ import {
 } from "@/components/period-drilldown";
 import { useMoneyFormat } from "@/components/privacy-context";
 import { useAppBasePath } from "@/components/use-app-base-path";
+import { MerchantList } from "@/components/merchant-list";
 import { Card, PageHeader, Select } from "@/components/ui";
 import {
   METRICS_RANGES,
@@ -29,10 +30,6 @@ const chartFallback = (
 
 const CategoryTrendsChart = dynamic(
   () => import("@/components/report-charts").then((m) => m.CategoryTrendsChart),
-  { ssr: false, loading: () => chartFallback },
-);
-const MerchantBarChart = dynamic(
-  () => import("@/components/report-charts").then((m) => m.MerchantBarChart),
   { ssr: false, loading: () => chartFallback },
 );
 const CashFlowSankey = dynamic(
@@ -357,7 +354,7 @@ export default function ReportsPage() {
                   : "Where the money actually went"}
               </p>
               {loading ? chartFallback : (
-                <MerchantBarChart
+                <MerchantList
                   data={data.merchants}
                   colorByFlexibility={ledger === "personal"}
                   onSelect={(row) => {

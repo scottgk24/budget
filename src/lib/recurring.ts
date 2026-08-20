@@ -114,11 +114,68 @@ function isSubscriptionLike(merchant: string, categoryName: string | null): bool
   return SUBSCRIPTION_HINTS.some((h) => hay.includes(h));
 }
 
-function nextOccurrence(last: Date, cadence: RecurringCadence): Date {
-  const days = cadenceDays(cadence);
-  const next = new Date(last);
-  next.setUTCDate(next.getUTCDate() + days);
+function shiftByCadence(date: Date, cadence: RecurringCadence, steps: number): Date {
+  const next = new Date(date.getTime());
+  switch (cadence) {
+    case "weekly":
+      next.setUTCDate(next.getUTCDate() + 7 * steps);
+      break;
+    case "biweekly":
+      next.setUTCDate(next.getUTCDate() + 14 * steps);
+      break;
+    case "monthly":
+      next.setUTCMonth(next.getUTCMonth() + steps);
+      break;
+    case "quarterly":
+      next.setUTCMonth(next.getUTCMonth() + 3 * steps);
+      break;
+    case "yearly":
+      next.setUTCFullYear(next.getUTCFullYear() + steps);
+      break;
+  }
   return next;
+}
+
+function nextOccurrence(last: Date, cadence: RecurringCadence): Date {
+  return shiftByCadence(last, cadence, 1);
+}
+
+function isoDayKey(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Days this recurring item lands in `month` (`yyyy-MM`), including charges
+ * already paid — not only the next unpaid date.
+ */
+export function occurrencesInMonth(
+  item: { lastDate: string; cadence: RecurringCadence },
+  month: string,
+): string[] {
+  const [y, m] = month.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const monthStartKey = `${month}-01`;
+  const monthEndKey = `${month}-${String(lastDay).padStart(2, "0")}`;
+  const last = new Date(item.lastDate);
+  const keys = new Set<string>();
+
+  let cursor = new Date(last.getTime());
+  for (let i = 0; i < 36; i++) {
+    const key = isoDayKey(cursor);
+    if (key < monthStartKey) break;
+    if (key <= monthEndKey) keys.add(key);
+    cursor = shiftByCadence(cursor, item.cadence, -1);
+  }
+
+  cursor = shiftByCadence(last, item.cadence, 1);
+  for (let i = 0; i < 36; i++) {
+    const key = isoDayKey(cursor);
+    if (key > monthEndKey) break;
+    if (key >= monthStartKey) keys.add(key);
+    cursor = shiftByCadence(cursor, item.cadence, 1);
+  }
+
+  return [...keys].sort();
 }
 
 /**
