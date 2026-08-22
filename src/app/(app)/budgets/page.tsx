@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import { useLedger } from "@/components/ledger-context";
+import { useLedgerGuard } from "@/components/ledger-context";
 import {
   BreakdownModal,
   type BreakdownTarget,
 } from "@/components/period-drilldown";
 import { HIDDEN_MONEY, useMoneyFormat, usePrivacy } from "@/components/privacy-context";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { Card, EmptyState, PageHeader, Select } from "@/components/ui";
 import {
   cn,
@@ -277,10 +278,11 @@ function BudgetAmountInput({
 }
 
 export default function BudgetsPage() {
-  const { ledger } = useLedger();
+  const { ledger, isCurrent } = useLedgerGuard();
   const copy = ledgerCopy(ledger);
   const { formatCurrency } = useMoneyFormat();
   const month = monthKey();
+  const [loadedLedger, setLoadedLedger] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [spentByCategory, setSpentByCategory] = useState<Record<string, number>>({});
   const [spentYtdByCategory, setSpentYtdByCategory] = useState<Record<string, number>>({});
@@ -298,9 +300,11 @@ export default function BudgetsPage() {
   const [coverFrom, setCoverFrom] = useState("");
 
   const load = useCallback(async () => {
+    const requested = ledger;
     setError(null);
-    const res = await fetch(`/api/budgets?ledger=${ledger}&month=${month}`);
+    const res = await fetch(`/api/budgets?ledger=${requested}&month=${month}`);
     const json = await res.json();
+    if (!isCurrent(requested)) return;
     if (!res.ok) {
       setError(json.error ?? "Failed to load");
       return;
@@ -319,7 +323,8 @@ export default function BudgetsPage() {
     }
     setDrafts(next);
     setSaved(next);
-  }, [ledger, month]);
+    setLoadedLedger(requested);
+  }, [ledger, month, isCurrent]);
 
   useEffect(() => {
     void load();
@@ -576,6 +581,10 @@ export default function BudgetsPage() {
       {error ? <p className="mb-4 text-sm text-[var(--danger)]">{error}</p> : null}
       {notice ? <p className="mb-4 text-sm text-[var(--positive)]">{notice}</p> : null}
 
+      {loadedLedger !== ledger ? (
+        <PageSkeleton label="Loading budgets" />
+      ) : (
+      <>
       {ledger === "personal" && fundPlan && fundPlan.uncoveredOverspend > 0 ? (
         <Card className="mb-6 border-[var(--danger)]/40">
           <p className="text-sm font-medium">
@@ -1040,6 +1049,8 @@ export default function BudgetsPage() {
             </ul>
           </Card>
         </>
+      )}
+      </>
       )}
     </div>
   );

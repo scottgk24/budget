@@ -136,8 +136,22 @@ function shiftByCadence(date: Date, cadence: RecurringCadence, steps: number): D
   return next;
 }
 
-function nextOccurrence(last: Date, cadence: RecurringCadence): Date {
-  return shiftByCadence(last, cadence, 1);
+/**
+ * First occurrence on or after the start of `from`'s month.
+ * Yearly/quarterly items keep rolling so last year's charge does not stay due
+ * in last year. Past-due dates in the current month still count as due.
+ */
+export function nextOccurrence(
+  last: Date,
+  cadence: RecurringCadence,
+  from: Date = new Date(),
+): Date {
+  const floorKey = `${from.getUTCFullYear()}-${String(from.getUTCMonth() + 1).padStart(2, "0")}-01`;
+  let next = shiftByCadence(last, cadence, 1);
+  for (let i = 0; i < 120 && isoDayKey(next) < floorKey; i++) {
+    next = shiftByCadence(next, cadence, 1);
+  }
+  return next;
 }
 
 function isoDayKey(date: Date): string {
@@ -227,7 +241,7 @@ export function detectRecurring(transactions: TxForRecurring[]): DetectedRecurri
       similar.map((t) => t.categoryName).find(Boolean) ?? null;
     const categoryId =
       similar.map((t) => t.categoryId).find(Boolean) ?? null;
-    const next = nextOccurrence(last.date, cadence);
+    const next = nextOccurrence(last.date, cadence, new Date());
 
     results.push({
       key,

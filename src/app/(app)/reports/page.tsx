@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useLedger } from "@/components/ledger-context";
+import { useLedgerGuard } from "@/components/ledger-context";
 import {
   BreakdownModal,
   type BreakdownTarget,
@@ -11,6 +11,7 @@ import {
 import { useMoneyFormat } from "@/components/privacy-context";
 import { useAppBasePath } from "@/components/use-app-base-path";
 import { MerchantList } from "@/components/merchant-list";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { Card, PageHeader, Select } from "@/components/ui";
 import {
   METRICS_RANGES,
@@ -90,30 +91,35 @@ type ReportsData = {
 };
 
 export default function ReportsPage() {
-  const { ledger } = useLedger();
+  const { ledger, isCurrent } = useLedgerGuard();
   const { href: appHref } = useAppBasePath();
   const copy = ledgerCopy(ledger);
   const { formatCurrency } = useMoneyFormat();
   const [rangeId, setRangeId] = useState<MetricsRangeId>("6m");
   const [data, setData] = useState<ReportsData | null>(null);
+  const [dataLedger, setDataLedger] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [breakdown, setBreakdown] = useState<BreakdownTarget | null>(null);
 
   const load = useCallback(async () => {
+    const requested = ledger;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/reports?ledger=${ledger}&range=${rangeId}`);
+      const res = await fetch(`/api/reports?ledger=${requested}&range=${rangeId}`);
       const json = await res.json();
+      if (!isCurrent(requested)) return;
       if (!res.ok) throw new Error(json.error ?? "Failed to load");
       setData(json);
+      setDataLedger(requested);
     } catch (err) {
+      if (!isCurrent(requested)) return;
       setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
-      setLoading(false);
+      if (isCurrent(requested)) setLoading(false);
     }
-  }, [ledger, rangeId]);
+  }, [ledger, rangeId, isCurrent]);
 
   useEffect(() => {
     void load();
@@ -123,8 +129,9 @@ export default function ReportsPage() {
     setBreakdown(null);
   }, [ledger, rangeId]);
 
-  const rangeFrom = data ? toDateParam(new Date(data.start)) : null;
-  const rangeTo = data ? toDateParam(new Date(data.end)) : null;
+  const view = dataLedger === ledger ? data : null;
+  const rangeFrom = view ? toDateParam(new Date(view.start)) : null;
+  const rangeTo = view ? toDateParam(new Date(view.end)) : null;
   const rangeLabel =
     METRICS_RANGES.find((r) => r.id === rangeId)?.label ?? "Selected range";
 
@@ -152,9 +159,9 @@ export default function ReportsPage() {
         <p className="mb-4 text-sm text-[var(--danger)]">{error}</p>
       ) : null}
 
-      {loading && !data ? (
-        <p className="text-[var(--muted)]">Loading…</p>
-      ) : data ? (
+      {!view ? (
+        <PageSkeleton label="Loading reports" />
+      ) : (
         <>
           <div
             className={`grid gap-4 sm:grid-cols-2 ${
@@ -164,7 +171,7 @@ export default function ReportsPage() {
             <Card>
               <p className="text-sm text-[var(--muted)]">{copy.income}</p>
               <p className="mt-2 font-display text-2xl">
-                {formatCurrency(data.totals.income)}
+                {formatCurrency(view.totals.income)}
               </p>
             </Card>
             {ledger === "personal" ? (
@@ -172,18 +179,18 @@ export default function ReportsPage() {
                 <Card>
                   <p className="text-sm text-[var(--muted)]">Flexible</p>
                   <p className="mt-2 font-display text-2xl text-[var(--danger)]">
-                    {formatCurrency(data.totals.discretionary)}
+                    {formatCurrency(view.totals.discretionary)}
                   </p>
-                  {data.totals.discretionaryShare != null ? (
+                  {view.totals.discretionaryShare != null ? (
                     <p className="mt-1 text-xs text-[var(--muted)]">
-                      {data.totals.discretionaryShare.toFixed(0)}% of spend
+                      {view.totals.discretionaryShare.toFixed(0)}% of spend
                     </p>
                   ) : null}
                 </Card>
                 <Card>
                   <p className="text-sm text-[var(--muted)]">Committed</p>
                   <p className="mt-2 font-display text-2xl">
-                    {formatCurrency(data.totals.fixed)}
+                    {formatCurrency(view.totals.fixed)}
                   </p>
                 </Card>
               </>
@@ -191,33 +198,33 @@ export default function ReportsPage() {
               <Card>
                 <p className="text-sm text-[var(--muted)]">{copy.spend}</p>
                 <p className="mt-2 font-display text-2xl">
-                  {formatCurrency(data.totals.spend)}
+                  {formatCurrency(view.totals.spend)}
                 </p>
               </Card>
             )}
             <Card>
               <p className="text-sm text-[var(--muted)]">
                 {copy.savings}
-                {data.totals.savingsRate != null
-                  ? copy.savingsRateSuffix(data.totals.savingsRate)
+                {view.totals.savingsRate != null
+                  ? copy.savingsRateSuffix(view.totals.savingsRate)
                   : ""}
               </p>
               <p
                 className={`mt-2 font-display text-2xl ${
-                  data.totals.savings >= 0
+                  view.totals.savings >= 0
                     ? "text-[var(--positive)]"
                     : "text-[var(--danger)]"
                 }`}
               >
-                {formatCurrency(data.totals.savings)}
+                {formatCurrency(view.totals.savings)}
               </p>
             </Card>
             <Card>
               <p className="text-sm text-[var(--muted)]">Age of money</p>
               <p className="mt-2 font-display text-2xl">
-                {data.ageOfMoney.ageDays == null
+                {view.ageOfMoney.ageDays == null
                   ? "—"
-                  : `${data.ageOfMoney.ageDays.toFixed(0)}d`}
+                  : `${view.ageOfMoney.ageDays.toFixed(0)}d`}
               </p>
               <p className="mt-1 text-xs text-[var(--muted)]">
                 Avg days between earning and spending
@@ -244,8 +251,8 @@ export default function ReportsPage() {
             </p>
             {loading ? chartFallback : (
               <CashFlowSankey
-                nodes={data.sankey.nodes}
-                links={data.sankey.links}
+                nodes={view.sankey.nodes}
+                links={view.sankey.links}
                 onSelectNode={(nodeName) => {
                   if (!rangeFrom || !rangeTo) return;
                   if (nodeName === "Committed" || nodeName === "Flexible" || nodeName === "Reserves" || nodeName === "Fixed" || nodeName === "Discretionary") {
@@ -284,7 +291,7 @@ export default function ReportsPage() {
               </p>
               {loading ? chartFallback : (
                 <FlexibilityTrendsChart
-                  data={data.flexibilityTrends}
+                  data={view.flexibilityTrends}
                   onSelect={({ monthKey, flexibility }) => {
                     setBreakdown({
                       type: "period",
@@ -317,8 +324,8 @@ export default function ReportsPage() {
             </p>
             {loading ? chartFallback : (
               <CategoryTrendsChart
-                data={data.categoryTrends.months}
-                keys={data.categoryTrends.keys}
+                data={view.categoryTrends.months}
+                keys={view.categoryTrends.keys}
                 onSelect={({ monthKey, categoryName }) => {
                   if (categoryName === "Other") {
                     setBreakdown({
@@ -355,7 +362,7 @@ export default function ReportsPage() {
               </p>
               {loading ? chartFallback : (
                 <MerchantList
-                  data={data.merchants}
+                  data={view.merchants}
                   colorByFlexibility={ledger === "personal"}
                   onSelect={(row) => {
                     if (!rangeFrom || !rangeTo) return;
@@ -377,16 +384,16 @@ export default function ReportsPage() {
                 Higher means a larger buffer between paychecks and spending
               </p>
               {loading ? chartFallback : (
-                <AgeOfMoneyChart series={data.ageOfMoney.series} />
+                <AgeOfMoneyChart series={view.ageOfMoney.series} />
               )}
             </Card>
           </div>
 
-          {data.incomeBreakdown.length > 0 ? (
+          {view.incomeBreakdown.length > 0 ? (
             <Card className="mt-6">
               <h2 className="mb-4 font-display text-lg">Income sources</h2>
               <ul className="divide-y divide-[var(--border)]">
-                {data.incomeBreakdown.map((row) => (
+                {view.incomeBreakdown.map((row) => (
                   <li
                     key={row.name}
                     className="flex items-center justify-between py-3 text-sm"
@@ -408,7 +415,7 @@ export default function ReportsPage() {
             target={breakdown}
           />
         </>
-      ) : null}
+      )}
     </div>
   );
 }

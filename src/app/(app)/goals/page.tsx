@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { differenceInCalendarDays, parseISO } from "date-fns";
-import { useLedger } from "@/components/ledger-context";
+import { useLedgerGuard } from "@/components/ledger-context";
 import { useMoneyFormat } from "@/components/privacy-context";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { Button, Card, EmptyState, Input, PageHeader } from "@/components/ui";
 import { formatDate } from "@/lib/format";
 import { ledgerLabel } from "@/lib/ledger-copy";
@@ -33,9 +34,10 @@ function paceLabel(goal: Goal): string | null {
 }
 
 export default function GoalsPage() {
-  const { ledger } = useLedger();
+  const { ledger, isCurrent } = useLedgerGuard();
   const { formatCurrency } = useMoneyFormat();
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [dataLedger, setDataLedger] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -45,19 +47,23 @@ export default function GoalsPage() {
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
+    const requested = ledger;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/goals?ledger=${ledger}`);
+      const res = await fetch(`/api/goals?ledger=${requested}`);
       const json = await res.json();
+      if (!isCurrent(requested)) return;
       if (!res.ok) throw new Error(json.error ?? "Failed to load");
       setGoals(json.goals);
+      setDataLedger(requested);
     } catch (err) {
+      if (!isCurrent(requested)) return;
       setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
-      setLoading(false);
+      if (isCurrent(requested)) setLoading(false);
     }
-  }, [ledger]);
+  }, [ledger, isCurrent]);
 
   useEffect(() => {
     void load();
@@ -177,7 +183,9 @@ export default function GoalsPage() {
         </form>
       </Card>
 
-      {loading && goals.length === 0 ? (
+      {dataLedger !== ledger ? (
+        <PageSkeleton label="Loading goals" />
+      ) : loading && goals.length === 0 ? (
         <p className="text-[var(--muted)]">Loading…</p>
       ) : goals.length === 0 ? (
         <EmptyState

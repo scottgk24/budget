@@ -32,6 +32,48 @@ type SankeyLink = { source: number; target: number; value: number };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+export type MerchantRollup = {
+  merchant: string;
+  amount: number;
+  count: number;
+  categoryName: string | null;
+};
+
+export function aggregateMerchants(
+  txs: Array<{
+    amount: number;
+    name: string;
+    merchantName: string | null;
+    categoryName?: string | null;
+  }>,
+  limit?: number,
+): MerchantRollup[] {
+  const merchantMap = new Map<string, MerchantRollup>();
+  for (const tx of txs) {
+    if (tx.amount <= 0) continue;
+    const raw = tx.merchantName || tx.name;
+    const key = merchantRuleKey(raw) || raw.trim().toLowerCase().slice(0, 40);
+    if (!key) continue;
+    const existing = merchantMap.get(key);
+    const display = (tx.merchantName || tx.name).trim();
+    if (existing) {
+      existing.amount += tx.amount;
+      existing.count += 1;
+    } else {
+      merchantMap.set(key, {
+        merchant: display,
+        amount: tx.amount,
+        count: 1,
+        categoryName: tx.categoryName ?? null,
+      });
+    }
+  }
+  const rows = [...merchantMap.values()]
+    .map((m) => ({ ...m, amount: round2(m.amount) }))
+    .sort((a, b) => b.amount - a.amount);
+  return limit != null ? rows.slice(0, limit) : rows;
+}
+
 /** Keep the largest branches; roll the rest into Other. */
 function trimFlows(
   entries: Array<{ name: string; value: number }>,
@@ -448,36 +490,17 @@ export async function buildReports(params: {
   }
 
   // --- Merchants ---
-  const merchantMap = new Map<
-    string,
-    { merchant: string; amount: number; count: number; categoryName: string | null }
-  >();
-  for (const tx of txs) {
-    if (!isSpendAmount(tx.amount, tx.category?.name) || tx.amount <= 0) continue;
-    const raw = tx.merchantName || tx.name;
-    const key = merchantRuleKey(raw) || raw.trim().toLowerCase().slice(0, 40);
-    if (!key) continue;
-    const existing = merchantMap.get(key);
-    const display = (tx.merchantName || tx.name).trim();
-    if (existing) {
-      existing.amount += tx.amount;
-      existing.count += 1;
-    } else {
-      merchantMap.set(key, {
-        merchant: display,
+  const merchants = aggregateMerchants(
+    txs
+      .filter((tx) => isSpendAmount(tx.amount, tx.category?.name) && tx.amount > 0)
+      .map((tx) => ({
         amount: tx.amount,
-        count: 1,
+        name: tx.name,
+        merchantName: tx.merchantName,
         categoryName: tx.category?.name ?? null,
-      });
-    }
-  }
-  const merchants = [...merchantMap.values()]
-    .map((m) => ({
-      ...m,
-      amount: Math.round(m.amount * 100) / 100,
-    }))
-    .sort((a, b) => b.amount - a.amount)
-    .slice(0, 15);
+      })),
+    15,
+  );
 
   // --- Sankey + flexibility totals ---
   let incomeTotal = 0;

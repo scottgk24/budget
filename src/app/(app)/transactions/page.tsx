@@ -3,8 +3,10 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { format, subDays } from "date-fns";
-import { useLedger } from "@/components/ledger-context";
+import { useLedgerGuard } from "@/components/ledger-context";
 import { useMoneyFormat } from "@/components/privacy-context";
+import { PageSkeleton } from "@/components/page-skeleton";
+import { useAppBasePath } from "@/components/use-app-base-path";
 import { Button, Card, EmptyState, Input, PageHeader, Select } from "@/components/ui";
 import {
   formatDate,
@@ -68,11 +70,13 @@ function sortCategories(cats: Category[]): Category[] {
 }
 
 function TransactionsPageInner() {
-  const { ledger } = useLedger();
+  const { ledger, isCurrent } = useLedgerGuard();
+  const { href: appHref } = useAppBasePath();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { formatSignedCurrency } = useMoneyFormat();
   const [transactions, setTransactions] = useState<Tx[]>([]);
+  const [dataLedger, setDataLedger] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [funds, setFunds] = useState<Fund[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -92,6 +96,7 @@ function TransactionsPageInner() {
   } | null>(null);
 
   const needsReview = searchParams.get("needsReview") === "1";
+  const merchantFilter = searchParams.get("merchant")?.trim() || "";
 
   if (filterLedger !== ledger) {
     setFilterLedger(ledger);
@@ -106,7 +111,15 @@ function TransactionsPageInner() {
     if (next) params.set("needsReview", "1");
     else params.delete("needsReview");
     const qs = params.toString();
-    router.replace(qs ? `/transactions?${qs}` : "/transactions", { scroll: false });
+    router.replace(appHref(qs ? `/transactions?${qs}` : "/transactions"), { scroll: false });
+  }
+
+  function setMerchantFilter(next: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next) params.set("merchant", next);
+    else params.delete("merchant");
+    const qs = params.toString();
+    router.replace(appHref(qs ? `/transactions?${qs}` : "/transactions"), { scroll: false });
   }
 
   const sortedCategories = useMemo(
@@ -122,11 +135,12 @@ function TransactionsPageInner() {
   );
 
   const load = useCallback(async () => {
+    const requested = ledger;
     setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams({
-        ledger,
+        ledger: requested,
         limit: "500",
       });
       if (needsReview) {
@@ -146,20 +160,23 @@ function TransactionsPageInner() {
       }
       if (q.trim()) params.set("q", q.trim());
       if (accountId) params.set("accountId", accountId);
+      if (merchantFilter) params.set("merchant", merchantFilter);
 
       const [txRes, catRes, acctRes, fundRes] = await Promise.all([
         fetch(`/api/transactions?${params}`),
-        fetch(`/api/categories?ledger=${ledger}`),
-        fetch(`/api/accounts?ledger=${ledger}`),
-        ledger === "personal" ? fetch("/api/funds") : Promise.resolve(null),
+        fetch(`/api/categories?ledger=${requested}`),
+        fetch(`/api/accounts?ledger=${requested}`),
+        requested === "personal" ? fetch("/api/funds") : Promise.resolve(null),
       ]);
       const txJson = await txRes.json();
       const catJson = await catRes.json();
       const acctJson = await acctRes.json();
+      if (!isCurrent(requested)) return;
       if (!txRes.ok) throw new Error(txJson.error ?? "Failed to load");
       if (!catRes.ok) throw new Error(catJson.error ?? "Failed to load categories");
       if (!acctRes.ok) throw new Error(acctJson.error ?? "Failed to load accounts");
       setTransactions(txJson.transactions);
+      setDataLedger(requested);
       setCategories(catJson.categories);
       if (fundRes) {
         const fundJson = await fundRes.json();
@@ -175,11 +192,12 @@ function TransactionsPageInner() {
         })),
       );
     } catch (err) {
+      if (!isCurrent(requested)) return;
       setError(err instanceof Error ? err.message : "Failed to load");
     } finally {
-      setLoading(false);
+      if (isCurrent(requested)) setLoading(false);
     }
-  }, [ledger, period, accountId, categoryId, needsReview, q]);
+  }, [ledger, period, accountId, categoryId, needsReview, q, merchantFilter, isCurrent]);
 
   useEffect(() => {
     const t = setTimeout(() => void load(), 200);
@@ -273,6 +291,7 @@ function TransactionsPageInner() {
         : categoryId
           ? categories.find((c) => c.id === categoryId)?.name
           : null,
+    merchantFilter ? merchantFilter : null,
     q.trim() ? `“${q.trim()}”` : null,
   ]
     .filter(Boolean)
@@ -375,7 +394,21 @@ function TransactionsPageInner() {
         </Card>
       ) : null}
 
-      {loading && transactions.length === 0 ? (
+      {merchantFilter ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-[var(--muted)]">Merchant</span>
+          <span className="rounded-md bg-[var(--accent-soft)] px-2 py-1 font-medium">
+            {merchantFilter}
+          </span>
+          <Button type="button" variant="ghost" onClick={() => setMerchantFilter("")}>
+            Clear
+          </Button>
+        </div>
+      ) : null}
+
+      {dataLedger !== ledger ? (
+        <PageSkeleton label="Loading transactions" />
+      ) : loading && transactions.length === 0 ? (
         <p className="text-[var(--muted)]">Loading…</p>
       ) : transactions.length === 0 ? (
         <EmptyState title="No transactions" />

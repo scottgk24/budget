@@ -29,3 +29,42 @@ export function sumNetBalances(
     0,
   );
 }
+
+export type BalanceSplit = {
+  cash: number;
+  otherAssets: number;
+  creditCards: number;
+  net: number;
+};
+
+/**
+ * Split already-linked accounts for the Personal headline.
+ * Cash = depository (checking/savings). Credit cards are a positive "owe".
+ * Loans are left in `net` only — do not surface a mortgage/loan line.
+ */
+export function splitAccountBalances(
+  accounts: Array<{ type: string; currentBalance: number | null }>,
+): BalanceSplit {
+  let cash = 0;
+  let otherAssets = 0;
+  let creditCards = 0;
+  for (const a of accounts) {
+    const type = a.type.toLowerCase();
+    const raw = a.currentBalance ?? 0;
+    if (type === "credit") {
+      creditCards += Math.abs(raw);
+    } else if (type === "loan") {
+      continue;
+    } else if (type === "depository") {
+      cash += raw;
+    } else {
+      otherAssets += raw;
+    }
+  }
+  return {
+    cash,
+    otherAssets,
+    creditCards,
+    net: sumNetBalances(accounts),
+  };
+}

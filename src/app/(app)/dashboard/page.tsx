@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useLedger } from "@/components/ledger-context";
+import { useLedgerGuard } from "@/components/ledger-context";
 import type { MetricsPoint } from "@/components/metrics-charts";
 import { PeriodDrilldown } from "@/components/period-drilldown";
 import { useMoneyFormat } from "@/components/privacy-context";
 import { useAppBasePath } from "@/components/use-app-base-path";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { Button, Card, EmptyState, PageHeader, Select } from "@/components/ui";
+import { isCurrencyHolding } from "@/lib/holdings";
 import {
   formatDate,
   METRICS_RANGES,
@@ -50,6 +52,9 @@ const CategoryPieChart = dynamic(
 type DashboardData = {
   month: string;
   totalBalance: number;
+  cashBalance?: number;
+  otherAssetBalance?: number;
+  creditCardDebt?: number;
   accountCount: number;
   spent: number;
   fixedSpend?: number | null;
@@ -58,6 +63,10 @@ type DashboardData = {
   fixedBudget?: number | null;
   discretionaryBudget?: number | null;
   income: number;
+  trailingIncomeAverage?: number;
+  incomeIncomplete?: boolean;
+  flexibleLeft?: number | null;
+  flexibleOverspend?: number;
   budgetTotal: number;
   recent: Array<{
     id: string;
@@ -112,6 +121,12 @@ type MetricsData = {
     savingsRate: number | null;
     balance?: number;
   };
+  topMerchants?: Array<{
+    merchant: string;
+    amount: number;
+    count: number;
+    categoryName: string | null;
+  }>;
 };
 
 const PERIODS: Array<{ id: MetricsGranularity; label: string }> = [
@@ -122,49 +137,51 @@ const PERIODS: Array<{ id: MetricsGranularity; label: string }> = [
 ];
 
 export default function DashboardPage() {
-  const { ledger } = useLedger();
+  const { ledger, isCurrent } = useLedgerGuard();
   const { href: appHref } = useAppBasePath();
   const copy = ledgerCopy(ledger);
   const { formatCurrency, formatSignedCurrency } = useMoneyFormat();
   const [data, setData] = useState<DashboardData | null>(null);
+  const [dataLedger, setDataLedger] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<MetricsData | null>(null);
+  const [metricsLedger, setMetricsLedger] = useState<string | null>(null);
   const [granularity, setGranularity] = useState<MetricsGranularity>("monthly");
   const [rangeId, setRangeId] = useState<MetricsRangeId>("3m");
   const [selectedPeriodKey, setSelectedPeriodKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [metricsLoading, setMetricsLoading] = useState(true);
 
   const load = useCallback(async () => {
-    setLoading(true);
+    const requested = ledger;
     setError(null);
     try {
-      const res = await fetch(`/api/dashboard?ledger=${ledger}&month=${monthKey()}`);
+      const res = await fetch(`/api/dashboard?ledger=${requested}&month=${monthKey()}`);
       const json = await res.json();
+      if (!isCurrent(requested)) return;
       if (!res.ok) throw new Error(json.error ?? "Failed to load");
       setData(json);
+      setDataLedger(requested);
     } catch (err) {
+      if (!isCurrent(requested)) return;
       setError(err instanceof Error ? err.message : "Failed to load");
-    } finally {
-      setLoading(false);
     }
-  }, [ledger]);
+  }, [ledger, isCurrent]);
 
   const loadMetrics = useCallback(async () => {
-    setMetricsLoading(true);
+    const requested = ledger;
     try {
       const res = await fetch(
-        `/api/metrics?ledger=${ledger}&granularity=${granularity}&range=${rangeId}`,
+        `/api/metrics?ledger=${requested}&granularity=${granularity}&range=${rangeId}`,
       );
       const json = await res.json();
+      if (!isCurrent(requested)) return;
       if (!res.ok) throw new Error(json.error ?? "Failed to load metrics");
       setMetrics(json);
+      setMetricsLedger(requested);
     } catch (err) {
+      if (!isCurrent(requested)) return;
       setError(err instanceof Error ? err.message : "Failed to load metrics");
-    } finally {
-      setMetricsLoading(false);
     }
-  }, [ledger, granularity, rangeId]);
+  }, [ledger, granularity, rangeId, isCurrent]);
 
   useEffect(() => {
     void load();
@@ -176,10 +193,12 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setSelectedPeriodKey(null);
-  }, [ledger, granularity, rangeId]);
+  }, [granularity, rangeId]);
 
+  const view = dataLedger === ledger ? data : null;
+  const metricsView = metricsLedger === ledger ? metrics : null;
   const remaining =
-    data && data.budgetTotal > 0 ? data.budgetTotal - data.spent : null;
+    view && view.budgetTotal > 0 ? view.budgetTotal - view.spent : null;
   const rangeLabel =
     METRICS_RANGES.find((r) => r.id === rangeId)?.label ?? "3 months";
   const bucketLabel =
@@ -200,9 +219,9 @@ export default function DashboardPage() {
         <p className="mb-4 text-sm text-[var(--danger)]">{error}</p>
       ) : null}
 
-      {loading && !data ? (
-        <p className="text-[var(--muted)]">Loading…</p>
-      ) : data && data.accountCount === 0 ? (
+      {!view ? (
+        <PageSkeleton label="Loading dashboard" />
+      ) : view.accountCount === 0 ? (
         <EmptyState
           title={copy.emptyAccountsTitle}
           description={copy.emptyAccountsDescription}
@@ -215,15 +234,54 @@ export default function DashboardPage() {
             </Link>
           }
         />
-      ) : data ? (
+      ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <p className="text-sm text-[var(--muted)]">{copy.balance}</p>
-              <p className="mt-2 font-display text-2xl">
-                {formatCurrency(data.totalBalance)}
-              </p>
-            </Card>
+          {ledger === "personal" ? (
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Card>
+                <p className="text-sm text-[var(--muted)]">Cash</p>
+                <p className="mt-2 font-display text-2xl">
+                  {formatCurrency(view.cashBalance ?? 0)}
+                </p>
+                <p className="mt-1 text-xs text-[var(--muted)]">
+                  Checking and savings
+                  {(view.otherAssetBalance ?? 0) > 0
+                    ? ` · also linked ${formatCurrency(view.otherAssetBalance ?? 0)}`
+                    : ""}
+                </p>
+              </Card>
+              <Card>
+                <p className="text-sm text-[var(--muted)]">Credit cards</p>
+                <p className="mt-2 font-display text-2xl">
+                  {formatCurrency(view.creditCardDebt ?? 0)}
+                </p>
+                <p className="mt-1 text-xs text-[var(--muted)]">Amount owed</p>
+              </Card>
+              <Card>
+                <p className="text-sm text-[var(--muted)]">Net</p>
+                <p className="mt-2 font-display text-2xl">
+                  {formatCurrency(view.totalBalance)}
+                </p>
+                <p className="mt-1 text-xs text-[var(--muted)]">
+                  Linked accounts, cards subtracted
+                </p>
+              </Card>
+            </div>
+          ) : null}
+
+          <div
+            className={`grid gap-4 sm:grid-cols-2 lg:grid-cols-3 ${
+              ledger === "personal" ? "mt-4" : ""
+            }`}
+          >
+            {ledger === "business" ? (
+              <Card>
+                <p className="text-sm text-[var(--muted)]">{copy.balance}</p>
+                <p className="mt-2 font-display text-2xl">
+                  {formatCurrency(view.totalBalance)}
+                </p>
+              </Card>
+            ) : null}
             <Card>
               <p className="text-sm text-[var(--muted)]">
                 {ledger === "personal" ? "Flexible" : copy.spentThisMonth}
@@ -231,83 +289,98 @@ export default function DashboardPage() {
               <p className="mt-2 font-display text-2xl">
                 {formatCurrency(
                   ledger === "personal"
-                    ? (data.discretionarySpend ?? data.spent)
-                    : data.spent,
+                    ? (view.discretionarySpend ?? view.spent)
+                    : view.spent,
                 )}
               </p>
-              {ledger === "personal" && data.fixedSpend != null ? (
+              {ledger === "personal" && view.fixedSpend != null ? (
                 <p className="mt-1 text-xs text-[var(--muted)]">
-                  Committed {formatCurrency(data.fixedSpend)}
-                  {data.reserveSpend
-                    ? ` · reserves ${formatCurrency(data.reserveSpend)}`
+                  Committed {formatCurrency(view.fixedSpend)}
+                  {view.reserveSpend
+                    ? ` · reserves ${formatCurrency(view.reserveSpend)}`
                     : ""}
                   {" · total "}
-                  {formatCurrency(data.spent)}
+                  {formatCurrency(view.spent)}
                 </p>
               ) : null}
             </Card>
             <Card>
               <p className="text-sm text-[var(--muted)]">{copy.incomeThisMonth}</p>
               <p className="mt-2 font-display text-2xl">
-                {formatCurrency(data.income)}
+                {formatCurrency(view.income)}
               </p>
+              {ledger === "personal" && view.incomeIncomplete ? (
+                <p className="mt-1 text-xs text-[var(--muted)]">
+                  Month incomplete — posted income is below the recent
+                  {view.trailingIncomeAverage
+                    ? ` ${formatCurrency(view.trailingIncomeAverage)}/mo`
+                    : ""}{" "}
+                  average. Another paycheck may still land.
+                </p>
+              ) : null}
             </Card>
             <Card>
               <p className="text-sm text-[var(--muted)]">
-                {data.spendPace?.freeToSpend != null
-                  ? data.spendPaceScope === "discretionary"
-                    ? "Free to spend"
-                    : "Free to spend"
+                {view.spendPace?.freeToSpend != null
+                  ? "Free to spend"
                   : copy.budgetRemaining}
               </p>
-              <p className="mt-2 font-display text-2xl">
-                {data.spendPace?.freeToSpend != null
-                  ? formatCurrency(data.spendPace.freeToSpend)
+              <p
+                className={`mt-2 font-display text-2xl ${
+                  (view.flexibleOverspend ?? 0) > 0 ? "text-[var(--danger)]" : ""
+                }`}
+              >
+                {view.spendPace?.freeToSpend != null
+                  ? formatCurrency(view.spendPace.freeToSpend)
                   : remaining === null
                     ? "—"
                     : formatCurrency(remaining)}
               </p>
-              {data.spendPace?.paceDelta != null ? (
+              {(view.flexibleOverspend ?? 0) > 0 ? (
+                <p className="mt-1 text-xs text-[var(--danger)]">
+                  Flexible over by {formatCurrency(view.flexibleOverspend ?? 0)}
+                </p>
+              ) : view.spendPace?.paceDelta != null ? (
                 <p
                   className={`mt-1 text-xs ${
-                    data.spendPace.paceDelta >= 0
+                    view.spendPace.paceDelta >= 0
                       ? "text-[var(--positive)]"
                       : "text-[var(--danger)]"
                   }`}
                 >
-                  {data.spendPace.paceDelta >= 0 ? "Under" : "Over"}{" "}
-                  {data.spendPaceScope === "discretionary" ? "flexible " : ""}
-                  pace by {formatCurrency(Math.abs(data.spendPace.paceDelta))}
+                  {view.spendPace.paceDelta >= 0 ? "Under" : "Over"}{" "}
+                  {view.spendPaceScope === "discretionary" ? "flexible " : ""}
+                  pace by {formatCurrency(Math.abs(view.spendPace.paceDelta))}
                 </p>
               ) : null}
             </Card>
           </div>
 
-          {data.spendPace &&
-          (data.spendPaceScope === "discretionary"
-            ? (data.discretionaryBudget ?? 0) > 0
-            : data.budgetTotal > 0) ? (
+          {view.spendPace &&
+          (view.spendPaceScope === "discretionary"
+            ? (view.discretionaryBudget ?? 0) > 0
+            : view.budgetTotal > 0) ? (
             <Card className="mt-6">
               <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
                 <div>
                   <h3 className="font-display text-lg">
-                    {data.spendPaceScope === "discretionary"
+                    {view.spendPaceScope === "discretionary"
                       ? "Flexible pace"
                       : "Spend pace"}
                   </h3>
                   <p className="text-sm text-[var(--muted)]">
-                    {data.spendPaceScope === "discretionary"
+                    {view.spendPaceScope === "discretionary"
                       ? "This month’s choices vs leftover after bills and sinking funds"
                       : "Actual cumulative spend vs ideal burn through the month"}
                   </p>
                 </div>
               </div>
               <SpendPaceChart
-                data={data.spendPace.series}
+                data={view.spendPace.series}
                 budgetTotal={
-                  data.spendPaceScope === "discretionary"
-                    ? (data.discretionaryBudget ?? data.budgetTotal)
-                    : data.budgetTotal
+                  view.spendPaceScope === "discretionary"
+                    ? (view.discretionaryBudget ?? view.budgetTotal)
+                    : view.budgetTotal
                 }
               />
             </Card>
@@ -362,17 +435,17 @@ export default function DashboardPage() {
                   <Card>
                     <p className="text-sm text-[var(--muted)]">Flexible</p>
                     <p className="mt-2 font-display text-xl text-[var(--danger)]">
-                      {metricsLoading && !metrics
+                      {!metricsView
                         ? "…"
-                        : formatCurrency(metrics?.totals.discretionarySpend ?? 0)}
+                        : formatCurrency(metricsView?.totals.discretionarySpend ?? 0)}
                     </p>
                   </Card>
                   <Card>
                     <p className="text-sm text-[var(--muted)]">Committed</p>
                     <p className="mt-2 font-display text-xl">
-                      {metricsLoading && !metrics
+                      {!metricsView
                         ? "…"
-                        : formatCurrency(metrics?.totals.fixedSpend ?? 0)}
+                        : formatCurrency(metricsView?.totals.fixedSpend ?? 0)}
                     </p>
                   </Card>
                 </>
@@ -380,37 +453,37 @@ export default function DashboardPage() {
                 <Card>
                   <p className="text-sm text-[var(--muted)]">{copy.spend}</p>
                   <p className="mt-2 font-display text-xl">
-                    {metricsLoading && !metrics
+                    {!metricsView
                       ? "…"
-                      : formatCurrency(metrics?.totals.spend ?? 0)}
+                      : formatCurrency(metricsView?.totals.spend ?? 0)}
                   </p>
                 </Card>
               )}
               <Card>
                 <p className="text-sm text-[var(--muted)]">{copy.income}</p>
                 <p className="mt-2 font-display text-xl">
-                  {metricsLoading && !metrics
+                  {!metricsView
                     ? "…"
-                    : formatCurrency(metrics?.totals.income ?? 0)}
+                    : formatCurrency(metricsView?.totals.income ?? 0)}
                 </p>
               </Card>
               <Card>
                 <p className="text-sm text-[var(--muted)]">
                   {copy.savings}
-                  {metrics?.totals.savingsRate != null
-                    ? copy.savingsRateSuffix(metrics.totals.savingsRate)
+                  {metricsView?.totals.savingsRate != null
+                    ? copy.savingsRateSuffix(metricsView.totals.savingsRate)
                     : ""}
                 </p>
                 <p
                   className={`mt-2 font-display text-xl ${
-                    (metrics?.totals.savings ?? 0) >= 0
+                    (metricsView?.totals.savings ?? 0) >= 0
                       ? "text-[var(--positive)]"
                       : "text-[var(--danger)]"
                   }`}
                 >
-                  {metricsLoading && !metrics
+                  {!metricsView
                     ? "…"
-                    : formatCurrency(metrics?.totals.savings ?? 0)}
+                    : formatCurrency(metricsView?.totals.savings ?? 0)}
                 </p>
               </Card>
             </div>
@@ -422,13 +495,13 @@ export default function DashboardPage() {
                     ? "Income vs committed, flexible & reserves"
                     : copy.incomeVsSpend}
                 </h3>
-                {metricsLoading && !metrics ? (
+                {!metricsView ? (
                   <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
                     Loading charts…
                   </p>
                 ) : (
                   <SpendIncomeChart
-                    data={metrics?.series ?? []}
+                    data={metricsView?.series ?? []}
                     onSelectPeriod={selectPeriod}
                     selectedKey={selectedPeriodKey}
                     incomeLabel={copy.income}
@@ -441,13 +514,13 @@ export default function DashboardPage() {
                 <h3 className="mb-3 font-display text-lg">
                   {copy.netSavings}
                 </h3>
-                {metricsLoading && !metrics ? (
+                {!metricsView ? (
                   <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
                     Loading charts…
                   </p>
                 ) : (
                   <SavingsChart
-                    data={metrics?.series ?? []}
+                    data={metricsView?.series ?? []}
                     onSelectPeriod={selectPeriod}
                     selectedKey={selectedPeriodKey}
                     savingsLabel={copy.savings}
@@ -466,18 +539,18 @@ export default function DashboardPage() {
                 </div>
                 <p className="text-sm tabular-nums text-[var(--muted)]">
                   Now{" "}
-                  {metricsLoading && !metrics
+                  {!metricsView
                     ? "…"
-                    : formatCurrency(metrics?.totals.balance ?? data.totalBalance)}
+                    : formatCurrency(metricsView?.totals.balance ?? view.totalBalance)}
                 </p>
               </div>
-              {metricsLoading && !metrics ? (
+              {!metricsView ? (
                 <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
                   Loading charts…
                 </p>
               ) : (
                 <BalanceChart
-                  data={metrics?.series ?? []}
+                  data={metricsView?.series ?? []}
                   onSelectPeriod={selectPeriod}
                   selectedKey={selectedPeriodKey}
                 />
@@ -493,7 +566,48 @@ export default function DashboardPage() {
             periodKey={selectedPeriodKey}
           />
 
-          <div className="mt-8 grid gap-6 lg:grid-cols-2">
+          <div
+            className={`mt-8 grid gap-6 ${
+              ledger === "personal" && (metricsView?.topMerchants?.length ?? 0) > 0
+                ? "lg:grid-cols-3"
+                : "lg:grid-cols-2"
+            }`}
+          >
+            {ledger === "personal" && (metricsView?.topMerchants?.length ?? 0) > 0 ? (
+              <Card>
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="font-display text-lg">Top merchants</h2>
+                  <Link href={appHref("/reports")} className="text-sm text-[var(--accent)]">
+                    Reports
+                  </Link>
+                </div>
+                <p className="mb-3 text-sm text-[var(--muted)]">
+                  {rangeLabel}
+                </p>
+                <ul className="space-y-3">
+                  {metricsView!.topMerchants!.map((row) => (
+                    <li key={row.merchant}>
+                      <Link
+                        href={appHref(
+                          `/transactions?merchant=${encodeURIComponent(row.merchant)}`,
+                        )}
+                        className="flex items-center justify-between text-sm hover:text-[var(--accent)]"
+                      >
+                        <span>
+                          {row.merchant}
+                          <span className="ml-1.5 text-[11px] text-[var(--muted)]">
+                            {row.count} tx
+                          </span>
+                        </span>
+                        <span className="tabular-nums text-[var(--muted)]">
+                          {formatCurrency(row.amount)}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            ) : null}
             <Card>
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="font-display text-lg">
@@ -503,11 +617,11 @@ export default function DashboardPage() {
                   {copy.budgetsLink}
                 </Link>
               </div>
-              {data.categorySpend.length === 0 ? (
+              {view.categorySpend.length === 0 ? (
                 <p className="text-sm text-[var(--muted)]">No spending yet this month.</p>
               ) : (
                 <ul className="space-y-3">
-                  {data.categorySpend.map((row) => {
+                  {view.categorySpend.map((row) => {
                     const annual = row.budgetPeriod === "annual";
                     const pct =
                       row.budget && row.budget > 0
@@ -571,11 +685,11 @@ export default function DashboardPage() {
                   All
                 </Link>
               </div>
-              {data.recent.length === 0 ? (
+              {view.recent.length === 0 ? (
                 <p className="text-sm text-[var(--muted)]">No transactions yet.</p>
               ) : (
                 <ul className="divide-y divide-[var(--border)]">
-                  {data.recent.map((tx) => (
+                  {view.recent.map((tx) => (
                     <li key={tx.id} className="flex items-center justify-between py-3 text-sm">
                       <div>
                         <p className="font-medium">{tx.merchantName || tx.name}</p>
@@ -598,21 +712,25 @@ export default function DashboardPage() {
             </Card>
           </div>
 
-          {data.holdings.length > 0 ? (
+          {view.holdings.length > 0 ? (
             <div className="mt-6 grid gap-6 lg:grid-cols-2">
               <Card>
                 <h2 className="mb-4 font-display text-lg">
                   {copy.holdings}
                 </h2>
                 <ul className="divide-y divide-[var(--border)]">
-                  {data.holdings.map((h) => (
+                  {view.holdings.map((h) => (
                     <li key={h.id} className="flex items-center justify-between py-3 text-sm">
                       <div>
                         <p className="font-medium">
                           {h.symbol ? `${h.symbol} · ` : ""}
                           {h.name}
                         </p>
-                        <p className="text-[var(--muted)]">{h.quantity} shares</p>
+                        <p className="text-[var(--muted)]">
+                          {isCurrencyHolding(h)
+                            ? "Cash"
+                            : `${h.quantity} shares`}
+                        </p>
                       </div>
                       <span>{h.value != null ? formatCurrency(h.value) : "—"}</span>
                     </li>
@@ -625,7 +743,7 @@ export default function DashboardPage() {
                   Portfolio mix by holding value
                 </p>
                 <CategoryPieChart
-                  data={data.holdings
+                  data={view.holdings
                     .filter((h) => (h.value ?? 0) > 0)
                     .map((h) => ({
                       id: h.id,
@@ -638,7 +756,7 @@ export default function DashboardPage() {
             </div>
           ) : null}
         </>
-      ) : null}
+      )}
     </div>
   );
 }

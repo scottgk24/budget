@@ -9,6 +9,7 @@ import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
 import { sumNetBalances } from "@/lib/accounts";
 import { isIncomeAmount, isSpendAmount, defaultFundSlugForCategoryName, fundKindForSlug } from "@/lib/categories";
 import { prisma } from "@/lib/db";
+import { aggregateMerchants } from "@/lib/reports";
 import {
   type MetricsGranularity,
   metricsBucketKey,
@@ -91,6 +92,8 @@ export async function GET(req: Request) {
         select: {
           date: true,
           amount: true,
+          name: true,
+          merchantName: true,
           fund: { select: { kind: true, slug: true } },
           category: { select: { name: true } },
         },
@@ -162,6 +165,18 @@ export async function GET(req: Request) {
     const savingsRate =
       totals.income > 0 ? (totals.savings / totals.income) * 100 : null;
 
+    const topMerchants = aggregateMerchants(
+      transactions
+        .filter((tx) => isSpendAmount(tx.amount, tx.category?.name) && tx.amount > 0)
+        .map((tx) => ({
+          amount: tx.amount,
+          name: tx.name,
+          merchantName: tx.merchantName,
+          categoryName: tx.category?.name ?? null,
+        })),
+      3,
+    );
+
     return NextResponse.json({
       ledger,
       granularity,
@@ -174,6 +189,7 @@ export async function GET(req: Request) {
         savingsRate,
         balance: currentBalance,
       },
+      topMerchants,
     });
   } catch (err) {
     if (err instanceof AuthError) {

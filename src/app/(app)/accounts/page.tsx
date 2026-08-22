@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useLedger } from "@/components/ledger-context";
+import { useLedgerGuard } from "@/components/ledger-context";
 import { PlaidLinkButton } from "@/components/plaid-link-button";
 import { useMoneyFormat } from "@/components/privacy-context";
 import { useAppBasePath } from "@/components/use-app-base-path";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { Button, Card, EmptyState, PageHeader, Select } from "@/components/ui";
 import { signedAccountBalance } from "@/lib/accounts";
 import { formatDate } from "@/lib/format";
@@ -39,20 +40,23 @@ type Item = {
 };
 
 export default function AccountsPage() {
-  const { ledger } = useLedger();
+  const { ledger, isCurrent } = useLedgerGuard();
   const { isDemo } = useAppBasePath();
   const copy = ledgerCopy(ledger);
   const { formatCurrency } = useMoneyFormat();
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [dataLedger, setDataLedger] = useState<string | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [plaidConfigured, setPlaidConfigured] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    const requested = ledger;
     setError(null);
-    const accountsRes = await fetch(`/api/accounts?ledger=${ledger}`);
+    const accountsRes = await fetch(`/api/accounts?ledger=${requested}`);
     const json = await accountsRes.json();
+    if (!isCurrent(requested)) return;
     if (!accountsRes.ok) {
       setError(json.error ?? "Failed to load");
       return;
@@ -60,7 +64,8 @@ export default function AccountsPage() {
     setAccounts(json.accounts);
     setItems(json.items);
     setPlaidConfigured(json.plaidConfigured);
-  }, [ledger]);
+    setDataLedger(requested);
+  }, [ledger, isCurrent]);
 
   useEffect(() => {
     void load();
@@ -162,7 +167,9 @@ export default function AccountsPage() {
 
       {error ? <p className="mb-4 text-sm text-[var(--danger)]">{error}</p> : null}
 
-      {accounts.length === 0 ? (
+      {dataLedger !== ledger ? (
+        <PageSkeleton label="Loading accounts" />
+      ) : accounts.length === 0 ? (
         <EmptyState
           title="No linked accounts"
           description={copy.accountsEmpty}

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { parseISO, subMonths } from "date-fns";
 import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
 import {
   excludeNonSpendCategory,
@@ -10,11 +11,13 @@ import {
 } from "@/lib/categories";
 import { computeFundMonth, ensureDefaultFunds } from "@/lib/funds";
 import { prisma } from "@/lib/db";
-import { sumNetBalances } from "@/lib/accounts";
+import { splitAccountBalances, sumNetBalances } from "@/lib/accounts";
+import { normalizeHoldings } from "@/lib/holdings";
 import {
   monthKey,
   monthRange,
   monthlyAllotment,
+  prevMonthKey,
   yearFromPeriod,
   yearRange,
 } from "@/lib/format";
@@ -35,6 +38,7 @@ export async function GET(req: Request) {
     });
 
     const totalBalance = sumNetBalances(accounts);
+    const balances = splitAccountBalances(accounts);
 
     const monthTx = await prisma.transaction.findMany({
       where: {
@@ -107,9 +111,9 @@ export async function GET(req: Request) {
             workspaceId: workspace.id,
             account: { ledger },
           },
-          include: { account: { select: { name: true } } },
+          include: { account: { select: { name: true, id: true } } },
           orderBy: { value: "desc" },
-          take: 8,
+          take: 40,
         }),
       ]);
 
@@ -171,6 +175,27 @@ export async function GET(req: Request) {
       .slice(0, 6);
 
     const spent = spendAgg._sum.amount ?? 0;
+    const income = Math.abs(incomeAgg._sum.amount ?? 0);
+
+    const trailEnd = monthRange(prevMonthKey(month)).end;
+    const trailStart = monthRange(
+      monthKey(subMonths(parseISO(`${month}-01`), 3)),
+    ).start;
+    const trailingIncomeAgg = await prisma.transaction.aggregate({
+      where: {
+        workspaceId: workspace.id,
+        ledger,
+        date: { gte: trailStart, lte: trailEnd },
+        pending: false,
+        amount: { lt: 0 },
+        ...incomeCategoryFilter,
+      },
+      _sum: { amount: true },
+    });
+    const trailingIncomeAverage =
+      Math.round((Math.abs(trailingIncomeAgg._sum.amount ?? 0) / 3) * 100) / 100;
+    const incomeIncomplete =
+      trailingIncomeAverage >= 100 && income < trailingIncomeAverage * 0.6;
 
     let fundPlan = null;
     let committedSpend = 0;
@@ -178,6 +203,8 @@ export async function GET(req: Request) {
     let reserveSpend = 0;
     let flexibleBudget = 0;
     let committedBudget = 0;
+    let flexibleLeft: number | null = null;
+    let flexibleOverspend = 0;
 
     if (ledger === "personal") {
       await ensureDefaultFunds(workspace.id);
@@ -190,13 +217,20 @@ export async function GET(req: Request) {
           .reduce((sum, f) => sum + f.spent, 0);
         flexibleBudget = Math.max(0, fundPlan.flexibleAssigned - fundPlan.carriedOverspend);
         committedBudget = fundPlan.committedNeed;
+        flexibleLeft =
+          Math.round(
+            (fundPlan.flexibleAssigned -
+              fundPlan.carriedOverspend -
+              fundPlan.flexibleSpent) *
+              100,
+          ) / 100;
+        flexibleOverspend = flexibleLeft < 0 ? Math.abs(flexibleLeft) : 0;
       }
     }
 
-    const paceBudget =
-      ledger === "personal" && flexibleBudget > 0 ? flexibleBudget : budgetTotal;
-    const paceSpent =
-      ledger === "personal" && fundPlan ? flexibleSpend : spent;
+    const useFlexiblePace = ledger === "personal" && fundPlan != null;
+    const paceBudget = useFlexiblePace ? flexibleBudget : budgetTotal;
+    const paceSpent = useFlexiblePace ? flexibleSpend : spent;
 
     const spendPace = await buildSpendPace({
       workspaceId: workspace.id,
@@ -204,14 +238,28 @@ export async function GET(req: Request) {
       month,
       budgetTotal: paceBudget,
       spentToDate: paceSpent,
-      fundKind: ledger === "personal" && fundPlan ? "flexible" : "all",
+      fundKind: useFlexiblePace ? "flexible" : "all",
     });
+
+    if (useFlexiblePace && flexibleLeft != null) {
+      spendPace.freeToSpend = Math.max(0, flexibleLeft);
+    }
+
+    const holdingsNormalized = normalizeHoldings(
+      holdings.map((h) => ({
+        ...h,
+        accountId: h.accountId,
+      })),
+    ).slice(0, 8);
 
     return NextResponse.json({
       month,
       year,
       ledger,
       totalBalance,
+      cashBalance: balances.cash,
+      otherAssetBalance: balances.otherAssets,
+      creditCardDebt: balances.creditCards,
       accountCount: accounts.length,
       spent,
       fixedSpend: ledger === "personal" ? committedSpend : null,
@@ -219,16 +267,19 @@ export async function GET(req: Request) {
       reserveSpend: ledger === "personal" ? reserveSpend : null,
       fixedBudget: ledger === "personal" ? committedBudget : null,
       discretionaryBudget: ledger === "personal" ? flexibleBudget : null,
+      flexibleLeft,
+      flexibleOverspend,
       fundPlan,
-      income: Math.abs(incomeAgg._sum.amount ?? 0),
+      income,
+      trailingIncomeAverage,
+      incomeIncomplete,
       budgetTotal,
       recent: monthTx,
       categorySpend,
-      holdings,
+      holdings: holdingsNormalized,
       accounts,
       spendPace,
-      spendPaceScope:
-        ledger === "personal" && fundPlan ? "discretionary" : "all",
+      spendPaceScope: useFlexiblePace ? "discretionary" : "all",
     });
   } catch (err) {
     if (err instanceof AuthError) {

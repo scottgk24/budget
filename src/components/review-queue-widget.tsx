@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { useLedger } from "@/components/ledger-context";
+import { useLedgerGuard } from "@/components/ledger-context";
 import { useMoneyFormat } from "@/components/privacy-context";
 import { useAppBasePath } from "@/components/use-app-base-path";
 import { cn, formatDate } from "@/lib/format";
@@ -22,8 +22,11 @@ type ReviewItem = {
 
 type ReviewQueueData = {
   total: number;
+  recentTotal?: number;
+  olderTotal?: number;
   counts: { review: number; uncategorized: number; other: number };
   items: ReviewItem[];
+  olderItems?: ReviewItem[];
 };
 
 const REASON_LABEL: Record<ReviewReason, string> = {
@@ -57,11 +60,13 @@ export function ReviewQueueWidget({
 }: {
   collapsed?: boolean;
 }) {
-  const { ledger } = useLedger();
+  const { ledger, isCurrent } = useLedgerGuard();
   const { href: appHref } = useAppBasePath();
   const { formatSignedCurrency } = useMoneyFormat();
   const [open, setOpen] = useState(false);
+  const [olderOpen, setOlderOpen] = useState(false);
   const [data, setData] = useState<ReviewQueueData | null>(null);
+  const [dataLedger, setDataLedger] = useState<string | null>(null);
   const [panelLedger, setPanelLedger] = useState(ledger);
   const panelId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -72,15 +77,17 @@ export function ReviewQueueWidget({
   }
 
   const load = useCallback(async () => {
+    const requested = ledger;
     try {
-      const res = await fetch(`/api/review-queue?ledger=${ledger}&limit=10`);
+      const res = await fetch(`/api/review-queue?ledger=${requested}&limit=16`);
       const json = await res.json();
-      if (!res.ok) return;
+      if (!isCurrent(requested) || !res.ok) return;
       setData(json);
+      setDataLedger(requested);
     } catch {
       // Keep last good data; widget is non-critical.
     }
-  }, [ledger]);
+  }, [ledger, isCurrent]);
 
   useEffect(() => {
     const t = window.setTimeout(() => void load(), 0);
@@ -107,7 +114,10 @@ export function ReviewQueueWidget({
     };
   }, [open]);
 
-  const total = data?.total ?? 0;
+  const view = dataLedger === ledger ? data : null;
+  const recentTotal = view?.recentTotal ?? 0;
+  const olderTotal = view?.olderTotal ?? 0;
+  const olderItems = view?.olderItems ?? [];
   const viewAllHref = appHref("/transactions?needsReview=1");
 
   return (
@@ -121,11 +131,11 @@ export function ReviewQueueWidget({
         className={cn(
           "relative rounded-md p-2 text-[var(--muted)] transition-colors hover:bg-[var(--accent-soft)] hover:text-[var(--fg)]",
           open && "bg-[var(--accent-soft)] text-[var(--fg)]",
-          total > 0 && "text-[var(--gold)]",
+          recentTotal > 0 && "text-[var(--gold)]",
         )}
         aria-label={
-          total > 0
-            ? `Review queue, ${total} item${total === 1 ? "" : "s"}`
+          recentTotal > 0
+            ? `Review queue, ${recentTotal} recent item${recentTotal === 1 ? "" : "s"}`
             : "Review queue"
         }
         aria-expanded={open}
@@ -133,9 +143,9 @@ export function ReviewQueueWidget({
         title="Needs review"
       >
         <IconBell />
-        {total > 0 ? (
+        {recentTotal > 0 ? (
           <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--accent)] px-1 text-[0.65rem] font-semibold text-[var(--on-accent)]">
-            {total > 99 ? "99+" : total}
+            {recentTotal > 99 ? "99+" : recentTotal}
           </span>
         ) : null}
       </button>
@@ -156,9 +166,11 @@ export function ReviewQueueWidget({
             <div>
               <p className="text-sm font-medium">Needs review</p>
               <p className="mt-0.5 text-xs text-[var(--muted)]">
-                {total === 0
+                {recentTotal === 0 && olderTotal === 0
                   ? "Queue is clear"
-                  : `${total} uncategorized, parked in Review, or Other`}
+                  : recentTotal === 0
+                    ? `${olderTotal} older than 30 days`
+                    : `${recentTotal} from the last 30 days`}
               </p>
             </div>
             <Link
@@ -170,19 +182,19 @@ export function ReviewQueueWidget({
             </Link>
           </div>
 
-          {data && total > 0 ? (
+          {view && (recentTotal > 0 || olderTotal > 0) ? (
             <div className="flex gap-2 border-b border-[var(--border)] px-3.5 py-2 text-[0.7rem] text-[var(--muted)]">
-              <span>Review {data.counts.review}</span>
+              <span>Review {view.counts.review}</span>
               <span aria-hidden>·</span>
-              <span>Uncat. {data.counts.uncategorized}</span>
+              <span>Uncat. {view.counts.uncategorized}</span>
               <span aria-hidden>·</span>
-              <span>Other {data.counts.other}</span>
+              <span>Other {view.counts.other}</span>
             </div>
           ) : null}
 
-          {data && data.items.length > 0 ? (
+          {view && view.items.length > 0 ? (
             <ul className="max-h-72 overflow-y-auto py-1">
-              {data.items.map((item) => (
+              {view.items.map((item) => (
                 <li key={item.id}>
                   <Link
                     href={viewAllHref}
@@ -210,11 +222,49 @@ export function ReviewQueueWidget({
                 </li>
               ))}
             </ul>
-          ) : (
+          ) : recentTotal === 0 && olderTotal === 0 ? (
             <p className="px-3.5 py-8 text-center text-sm text-[var(--muted)]">
               Nothing waiting right now.
             </p>
-          )}
+          ) : null}
+
+          {olderTotal > 0 ? (
+            <div className="border-t border-[var(--border)]">
+              <button
+                type="button"
+                onClick={() => setOlderOpen((v) => !v)}
+                className="flex w-full items-center justify-between px-3.5 py-2 text-left text-xs font-medium text-[var(--muted)] hover:bg-[var(--accent-soft)]/40"
+              >
+                <span>Older ({olderTotal})</span>
+                <span aria-hidden>{olderOpen ? "Hide" : "Show"}</span>
+              </button>
+              {olderOpen ? (
+                <ul className="max-h-48 overflow-y-auto py-1">
+                  {olderItems.map((item) => (
+                    <li key={item.id}>
+                      <Link
+                        href={viewAllHref}
+                        onClick={() => setOpen(false)}
+                        className="flex items-start justify-between gap-3 px-3.5 py-2.5 transition-colors hover:bg-[var(--accent-soft)]/60"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">
+                            {item.merchantName || item.name}
+                          </p>
+                          <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
+                            {REASON_LABEL[item.reason]} · {formatDate(item.date)}
+                          </p>
+                        </div>
+                        <span className="shrink-0 text-sm tabular-nums">
+                          {formatSignedCurrency(item.amount)}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

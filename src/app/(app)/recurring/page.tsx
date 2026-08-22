@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useLedger } from "@/components/ledger-context";
+import { useLedgerGuard } from "@/components/ledger-context";
 import { useMoneyFormat } from "@/components/privacy-context";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { Card, PageHeader } from "@/components/ui";
 import { formatDate, monthKey } from "@/lib/format";
 import { ledgerLabel } from "@/lib/ledger-copy";
@@ -84,40 +85,43 @@ function RecurringListSection({
 }
 
 export default function RecurringPage() {
-  const { ledger } = useLedger();
+  const { ledger, isCurrent } = useLedgerGuard();
   const { formatCurrency } = useMoneyFormat();
   const [data, setData] = useState<RecurringData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [dataLedger, setDataLedger] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const month = monthKey();
 
   const load = useCallback(async () => {
-    setLoading(true);
+    const requested = ledger;
     setError(null);
     try {
-      const res = await fetch(`/api/recurring?ledger=${ledger}&month=${month}`);
+      const res = await fetch(`/api/recurring?ledger=${requested}&month=${month}`);
       const json = await res.json();
+      if (!isCurrent(requested)) return;
       if (!res.ok) throw new Error(json.error ?? "Failed to load");
       setData(json);
+      setDataLedger(requested);
     } catch (err) {
+      if (!isCurrent(requested)) return;
       setError(err instanceof Error ? err.message : "Failed to load");
-    } finally {
-      setLoading(false);
     }
-  }, [ledger, month]);
+  }, [ledger, month, isCurrent]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  const view = dataLedger === ledger ? data : null;
+
   const todayKey = `${month}-${String(new Date().getDate()).padStart(2, "0")}`;
 
   const calendarDays = useMemo(() => {
-    if (!data) return [];
+    if (!view) return [];
     const [y, m] = month.split("-").map(Number);
     const daysInMonth = new Date(y, m, 0).getDate();
     const byDay = new Map<string, RecurringItem[]>();
-    for (const item of data.items) {
+    for (const item of view.items) {
       for (const key of occurrencesInMonth(item, month)) {
         const list = byDay.get(key) ?? [];
         list.push(item);
@@ -132,7 +136,7 @@ export default function RecurringPage() {
       );
       return { day, key, items };
     });
-  }, [data, month]);
+  }, [view, month]);
 
   return (
     <div>
@@ -145,31 +149,31 @@ export default function RecurringPage() {
         <p className="mb-4 text-sm text-[var(--danger)]">{error}</p>
       ) : null}
 
-      {loading && !data ? (
-        <p className="text-[var(--muted)]">Loading…</p>
-      ) : data ? (
+      {!view ? (
+        <PageSkeleton label="Loading recurring" />
+      ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-3">
             <Card>
               <p className="text-sm text-[var(--muted)]">Est. monthly</p>
               <p className="mt-2 font-display text-2xl">
-                {formatCurrency(data.totals.monthlyEstimate)}
+                {formatCurrency(view.totals.monthlyEstimate)}
               </p>
             </Card>
             <Card>
               <p className="text-sm text-[var(--muted)]">Still due this month</p>
               <p className="mt-2 font-display text-2xl">
-                {formatCurrency(data.totals.upcomingThisMonth)}
+                {formatCurrency(view.totals.upcomingThisMonth)}
               </p>
             </Card>
             <Card>
               <p className="text-sm text-[var(--muted)]">Detected</p>
               <p className="mt-2 font-display text-2xl">
-                {data.totals.billCount + data.totals.subscriptionCount}
+                {view.totals.billCount + view.totals.subscriptionCount}
               </p>
               <p className="mt-1 text-xs text-[var(--muted)]">
-                {data.totals.subscriptionCount} subscriptions ·{" "}
-                {data.totals.billCount} bills
+                {view.totals.subscriptionCount} subscriptions ·{" "}
+                {view.totals.billCount} bills
               </p>
             </Card>
           </div>
@@ -240,17 +244,17 @@ export default function RecurringPage() {
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
             <RecurringListSection
               title="Subscriptions"
-              items={data.subscriptions}
+              items={view.subscriptions}
               formatCurrency={formatCurrency}
             />
             <RecurringListSection
               title="Bills & other recurring"
-              items={data.bills}
+              items={view.bills}
               formatCurrency={formatCurrency}
             />
           </div>
         </>
-      ) : null}
+      )}
     </div>
   );
 }

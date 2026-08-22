@@ -41,9 +41,9 @@ export async function GET(req: Request) {
       })),
     );
 
-    const now = new Date();
+    const { start: monthStart } = monthRange(month);
     const monthEnd = endOfMonth(new Date(`${month}-01T12:00:00`));
-    const upcomingThisMonth = upcomingRecurringTotal(items, monthEnd, now);
+    const upcomingThisMonth = upcomingRecurringTotal(items, monthEnd, monthStart);
     const subscriptions = items.filter((i) => i.isSubscription);
     const bills = items.filter((i) => !i.isSubscription);
 

@@ -29,6 +29,7 @@ export async function GET(req: Request) {
     const ledger = searchParams.get("ledger") as "personal" | "business" | null;
     const take = Math.min(Number(searchParams.get("limit") ?? 12), 40);
     const since = subDays(new Date(), 90);
+    const recentSince = subDays(new Date(), 30);
     const ledgerFilter =
       ledger === "personal" || ledger === "business" ? { ledger } : {};
 
@@ -47,37 +48,57 @@ export async function GET(req: Request) {
       ],
     };
 
-    const [total, reviewCount, uncategorizedCount, otherCount, items] =
-      await Promise.all([
-        prisma.transaction.count({ where: queueWhere }),
-        prisma.transaction.count({
-          where: { ...base, category: { name: REVIEW_CATEGORY } },
-        }),
-        prisma.transaction.count({
-          where: { ...base, categoryId: null },
-        }),
-        prisma.transaction.count({
-          where: { ...base, category: { name: OTHER_CATEGORY } },
-        }),
-        prisma.transaction.findMany({
-          where: queueWhere,
-          include: {
-            category: { select: { id: true, name: true } },
-            account: { select: { name: true, mask: true } },
-          },
-          orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-          take,
-        }),
-      ]);
+    const recentWhere = {
+      ...queueWhere,
+      date: { gte: recentSince },
+    };
+    const olderWhere = {
+      ...queueWhere,
+      date: { gte: since, lt: recentSince },
+    };
 
-    return NextResponse.json({
+    const include = {
+      category: { select: { id: true, name: true } },
+      account: { select: { name: true, mask: true } },
+    } as const;
+
+    const [
       total,
-      counts: {
-        review: reviewCount,
-        uncategorized: uncategorizedCount,
-        other: otherCount,
-      },
-      items: items.map((tx) => ({
+      recentTotal,
+      olderTotal,
+      reviewCount,
+      uncategorizedCount,
+      otherCount,
+      recentItems,
+      olderItems,
+    ] = await Promise.all([
+      prisma.transaction.count({ where: queueWhere }),
+      prisma.transaction.count({ where: recentWhere }),
+      prisma.transaction.count({ where: olderWhere }),
+      prisma.transaction.count({
+        where: { ...base, category: { name: REVIEW_CATEGORY } },
+      }),
+      prisma.transaction.count({
+        where: { ...base, categoryId: null },
+      }),
+      prisma.transaction.count({
+        where: { ...base, category: { name: OTHER_CATEGORY } },
+      }),
+      prisma.transaction.findMany({
+        where: recentWhere,
+        include,
+        orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+        take,
+      }),
+      prisma.transaction.findMany({
+        where: olderWhere,
+        include,
+        orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+        take,
+      }),
+    ]);
+
+    const mapItem = (tx: (typeof recentItems)[number]) => ({
         id: tx.id,
         name: tx.name,
         merchantName: tx.merchantName,
@@ -88,7 +109,20 @@ export async function GET(req: Request) {
         reason: reasonFor(tx.category?.name),
         category: tx.category,
         account: tx.account,
-      })),
+      });
+
+    return NextResponse.json({
+      total,
+      recentTotal,
+      olderTotal,
+      olderCutoffDays: 30,
+      counts: {
+        review: reviewCount,
+        uncategorized: uncategorizedCount,
+        other: otherCount,
+      },
+      items: recentItems.map(mapItem),
+      olderItems: olderItems.map(mapItem),
     });
   } catch (err) {
     if (err instanceof AuthError) {

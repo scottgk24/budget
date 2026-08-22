@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { startOfMonth, subMonths } from "date-fns";
-import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
+import {
+  AuthError,
+  ensureMissingDefaultCategories,
+  ensureUserAndWorkspace,
+} from "@/lib/auth";
 import { excludeNonSpendCategory, isAnnualBudgetPeriod } from "@/lib/categories";
 import { computeFundMonth, ensureDefaultFunds } from "@/lib/funds";
 import { prisma } from "@/lib/db";
@@ -22,6 +26,7 @@ export async function GET(req: Request) {
     const month = searchParams.get("month") || monthKey();
     const year = yearFromPeriod(month);
 
+    await ensureMissingDefaultCategories(workspace.id);
     if (ledger === "personal") {
       await ensureDefaultFunds(workspace.id);
     }
