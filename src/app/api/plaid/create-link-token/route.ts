@@ -10,9 +10,10 @@ import {
   isPlaidConfigured,
 } from "@/lib/plaid";
 import { CountryCode, Products } from "plaid";
+import { ledgerSlugSchema } from "@/lib/workspace-ledgers";
 
 const bodySchema = z.object({
-  ledger: z.enum(["personal", "business"]).default("personal"),
+  ledger: ledgerSlugSchema.default("personal"),
 });
 
 export async function POST(req: Request) {

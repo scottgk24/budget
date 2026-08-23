@@ -9,6 +9,9 @@ import {
 import { excludeNonSpendCategory, isAnnualBudgetPeriod } from "@/lib/categories";
 import { computeFundMonth, ensureDefaultFunds } from "@/lib/funds";
 import { prisma } from "@/lib/db";
+import { ledgerSlugSchema } from "@/lib/workspace-ledgers";
+import { parseLedger } from "@/lib/ledger";
+import { isPersonalLedger } from "@/lib/workspace-ledgers";
 import {
   monthKey,
   monthRange,
@@ -22,12 +25,13 @@ export async function GET(req: Request) {
   try {
     const { workspace } = await ensureUserAndWorkspace();
     const { searchParams } = new URL(req.url);
-    const ledger = (searchParams.get("ledger") as "personal" | "business") || "personal";
+    const ledger = parseLedger(searchParams.get("ledger")) ?? "personal";
+    const isPersonal = await isPersonalLedger(workspace.id, ledger);
     const month = searchParams.get("month") || monthKey();
     const year = yearFromPeriod(month);
 
     await ensureMissingDefaultCategories(workspace.id);
-    if (ledger === "personal") {
+    if (isPersonal) {
       await ensureDefaultFunds(workspace.id);
     }
 
@@ -139,11 +143,11 @@ export async function GET(req: Request) {
     );
 
     const fundPlan =
-      ledger === "personal"
+      isPersonal
         ? await computeFundMonth({ workspaceId: workspace.id, month })
         : null;
     const funds =
-      ledger === "personal"
+      isPersonal
         ? await prisma.fund.findMany({
             where: { workspaceId: workspace.id, ledger: "personal" },
             orderBy: { sortOrder: "asc" },
@@ -172,7 +176,7 @@ export async function GET(req: Request) {
 
 const upsertSchema = z.object({
   categoryId: z.string(),
-  ledger: z.enum(["personal", "business"]),
+  ledger: ledgerSlugSchema,
   month: z.string().regex(/^\d{4}-\d{2}$/),
   amount: z.number().min(0),
 });
@@ -224,7 +228,7 @@ export async function PUT(req: Request) {
 
 const periodSchema = z.object({
   categoryId: z.string(),
-  ledger: z.enum(["personal", "business"]),
+  ledger: ledgerSlugSchema,
   month: z.string().regex(/^\d{4}-\d{2}$/),
   budgetPeriod: z.enum(["monthly", "annual"]),
 });

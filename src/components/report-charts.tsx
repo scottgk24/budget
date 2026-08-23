@@ -650,4 +650,84 @@ export function AgeOfMoneyChart({
   );
 }
 
+export function NetWorthTrendChart({
+  data,
+}: {
+  data: Array<{ date: string; label: string; net: number; assets: number; liabilities: number }>;
+}) {
+  const { formatCompactCurrency, formatCurrency } = useMoneyFormat();
+  if (data.length < 2) {
+    return (
+      <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
+        History starts after the first snapshot. Check back tomorrow, or sync accounts.
+      </p>
+    );
+  }
+
+  return (
+    <div className="h-72 w-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          <defs>
+            <linearGradient id="netWorthFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={COLORS.income} stopOpacity={0.28} />
+              <stop offset="100%" stopColor={COLORS.income} stopOpacity={0.02} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid stroke={COLORS.grid} strokeDasharray="3 3" vertical={false} />
+          <XAxis
+            dataKey="label"
+            tick={{ fill: COLORS.muted, fontSize: 11 }}
+            tickLine={false}
+            axisLine={{ stroke: COLORS.grid }}
+            interval="preserveStartEnd"
+            minTickGap={28}
+          />
+          <YAxis
+            tick={{ fill: COLORS.muted, fontSize: 11 }}
+            tickLine={false}
+            axisLine={false}
+            tickFormatter={formatCompactCurrency}
+            width={52}
+          />
+          <Tooltip
+            cursor={LINE_CURSOR}
+            content={({ active, payload }) => {
+              if (!active || !payload?.length) return null;
+              const row = payload[0].payload as {
+                label: string;
+                net: number;
+                assets: number;
+                liabilities: number;
+              };
+              return (
+                <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm shadow-sm">
+                  <p className="mb-1 font-medium">{row.label}</p>
+                  <p className="tabular-nums">Net {formatCurrency(row.net)}</p>
+                  <p className="tabular-nums text-[var(--muted)]">
+                    Assets {formatCurrency(row.assets)}
+                  </p>
+                  <p className="tabular-nums text-[var(--muted)]">
+                    Debts {formatCurrency(row.liabilities)}
+                  </p>
+                </div>
+              );
+            }}
+          />
+          <Area
+            type="monotone"
+            dataKey="net"
+            name="Net worth"
+            stroke={COLORS.income}
+            fill="url(#netWorthFill)"
+            strokeWidth={2}
+            dot={false}
+            activeDot={{ r: 5, strokeWidth: 0 }}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 export { STACK_COLORS };

@@ -33,10 +33,29 @@ model Workspace {
   transactions   Transaction[]
   budgets        Budget[]
   invites        Invite[]
-  holdings       Holding[]
-  goals          Goal[]
-  funds          Fund[]
-  fundCovers     FundCover[]
+  holdings          Holding[]
+  goals             Goal[]
+  funds             Fund[]
+  fundCovers        FundCover[]
+  netWorthSnapshots NetWorthSnapshot[]
+  ledgers           WorkspaceLedger[]
+}
+
+model WorkspaceLedger {
+  id          String   @id @default(cuid())
+  workspaceId String
+  slug        String
+  name        String
+  kind        String
+  isSystem    Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId])
 }
 
 model Membership {
@@ -209,6 +228,22 @@ model Holding {
   account   Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, accountId])
+}
+
+model NetWorthSnapshot {
+  id          String   @id @default(cuid())
+  workspaceId String
+  ledger      String
+  date        String
+  assets      Float
+  liabilities Float
+  net         Float
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, ledger, date])
+  @@index([workspaceId, ledger, date])
 }
 
 model Budget {

@@ -125,18 +125,17 @@ export async function fundIdForCategory(opts: {
   categoryId: string | null | undefined;
   fundsBySlug?: Map<string, FundRow>;
 }): Promise<string | null> {
-  if (opts.ledger !== "personal") return null;
-
   const funds =
     opts.fundsBySlug ??
     new Map(
       (
         await prisma.fund.findMany({
-          where: { workspaceId: opts.workspaceId, ledger: "personal" },
+          where: { workspaceId: opts.workspaceId, ledger: opts.ledger },
           select: FUND_SELECT,
         })
       ).map((f) => [f.slug, f]),
     );
+  if (funds.size === 0) return null;
 
   if (!opts.categoryId) {
     return funds.get("flexible")?.id ?? null;
@@ -146,7 +145,7 @@ export async function fundIdForCategory(opts: {
     where: { id: opts.categoryId, workspaceId: opts.workspaceId },
     select: { name: true, defaultFundId: true, ledger: true },
   });
-  if (!category || category.ledger !== "personal") return null;
+  if (!category || category.ledger !== opts.ledger) return null;
   if (category.defaultFundId) return category.defaultFundId;
 
   const slug = defaultFundSlugForCategoryName(category.name);
@@ -174,9 +173,9 @@ export async function fundFieldsForCategoryChange(opts: {
 }
 
 /** Insert default personal funds, map categories, backfill unlocked transactions. */
-export async function ensureDefaultFunds(workspaceId: string): Promise<void> {
+export async function ensureDefaultFunds(workspaceId: string, ledger = "personal"): Promise<void> {
   const existing = await prisma.fund.findMany({
-    where: { workspaceId, ledger: "personal" },
+    where: { workspaceId, ledger },
     select: FUND_SELECT,
   });
   const have = new Set(existing.map((f) => f.slug));
@@ -185,7 +184,7 @@ export async function ensureDefaultFunds(workspaceId: string): Promise<void> {
     await prisma.fund.createMany({
       data: missing.map((d) => ({
         workspaceId,
-        ledger: "personal",
+        ledger,
         name: d.name,
         slug: d.slug,
         kind: d.kind,
@@ -195,7 +194,7 @@ export async function ensureDefaultFunds(workspaceId: string): Promise<void> {
   }
 
   const funds = await prisma.fund.findMany({
-    where: { workspaceId, ledger: "personal" },
+    where: { workspaceId, ledger },
     select: FUND_SELECT,
   });
   const bySlug = new Map(funds.map((f) => [f.slug, f]));
@@ -205,7 +204,7 @@ export async function ensureDefaultFunds(workspaceId: string): Promise<void> {
     const fund = bySlug.get(slug);
     if (!fund || fund.monthlyContribution > 0) continue;
     const category = await prisma.category.findFirst({
-      where: { workspaceId, ledger: "personal", name: categoryName },
+      where: { workspaceId, ledger, name: categoryName },
       select: { id: true },
     });
     if (!category) continue;
@@ -213,7 +212,7 @@ export async function ensureDefaultFunds(workspaceId: string): Promise<void> {
       where: {
         workspaceId,
         categoryId: category.id,
-        ledger: "personal",
+        ledger,
         month: year,
       },
       select: { amount: true },
@@ -228,7 +227,7 @@ export async function ensureDefaultFunds(workspaceId: string): Promise<void> {
   }
 
   const categories = await prisma.category.findMany({
-    where: { workspaceId, ledger: "personal", defaultFundId: null },
+    where: { workspaceId, ledger, defaultFundId: null },
     select: { id: true, name: true },
   });
   for (const cat of categories) {
@@ -245,7 +244,7 @@ export async function ensureDefaultFunds(workspaceId: string): Promise<void> {
   const unlocked = await prisma.transaction.findMany({
     where: {
       workspaceId,
-      ledger: "personal",
+      ledger,
       fundId: null,
       OR: [{ fundSource: null }, { fundSource: "category" }],
     },

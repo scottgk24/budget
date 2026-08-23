@@ -91,9 +91,9 @@ type ReportsData = {
 };
 
 export default function ReportsPage() {
-  const { ledger, isCurrent } = useLedgerGuard();
+  const { ledger, kind, isCurrent } = useLedgerGuard();
   const { href: appHref } = useAppBasePath();
-  const copy = ledgerCopy(ledger);
+  const copy = ledgerCopy(kind);
   const { formatCurrency } = useMoneyFormat();
   const [rangeId, setRangeId] = useState<MetricsRangeId>("6m");
   const [data, setData] = useState<ReportsData | null>(null);
@@ -165,9 +165,9 @@ export default function ReportsPage() {
         <>
           <div
             className={`grid gap-4 sm:grid-cols-2 ${
-              ledger === "personal" && view.totals.reserve != null
+              kind === "personal" && view.totals.reserve != null
                 ? "lg:grid-cols-3 xl:grid-cols-6"
-                : ledger === "personal"
+                : kind === "personal"
                   ? "lg:grid-cols-5"
                   : "lg:grid-cols-4"
             }`}
@@ -178,7 +178,7 @@ export default function ReportsPage() {
                 {formatCurrency(view.totals.income)}
               </p>
             </Card>
-            {ledger === "personal" ? (
+            {kind === "personal" ? (
               <>
                 <Card>
                   <p className="text-sm text-[var(--muted)]">Flexible</p>
@@ -257,7 +257,7 @@ export default function ReportsPage() {
           <Card className="mt-6">
             <h2 className="mb-1 font-display text-lg">Cash flow</h2>
             <p className="mb-4 text-sm text-[var(--muted)]">
-              {ledger === "personal"
+              {kind === "personal"
                 ? `Income → committed / flexible / reserves → categories. Overspend is drawn from ${copy.savings.toLowerCase()}.`
                 : `${copy.income} into categories; spending above ${copy.income.toLowerCase()} is drawn from ${copy.savings.toLowerCase()}`}
             </p>
@@ -295,7 +295,7 @@ export default function ReportsPage() {
             )}
           </Card>
 
-          {ledger === "personal" ? (
+          {kind === "personal" ? (
             <Card className="mt-6">
               <h2 className="mb-1 font-display text-lg">Committed, flexible & reserves</h2>
               <p className="mb-4 text-sm text-[var(--muted)]">
@@ -325,12 +325,12 @@ export default function ReportsPage() {
 
           <Card className="mt-6">
             <h2 className="mb-1 font-display text-lg">
-              {ledger === "personal"
+              {kind === "personal"
                 ? "Flexible by category"
                 : "Spending by category"}
             </h2>
             <p className="mb-4 text-sm text-[var(--muted)]">
-              {ledger === "personal"
+              {kind === "personal"
                 ? "Month-over-month trends for controllable spending"
                 : "Month-over-month trends for top categories"}
             </p>
@@ -345,7 +345,7 @@ export default function ReportsPage() {
                       periodKey: monthKey,
                       granularity: "monthly",
                       flexibility:
-                        ledger === "personal" ? "discretionary" : undefined,
+                        kind === "personal" ? "discretionary" : undefined,
                       title: "Other",
                     });
                     return;
@@ -368,14 +368,14 @@ export default function ReportsPage() {
             <Card>
               <h2 className="mb-1 font-display text-lg">Top merchants</h2>
               <p className="mb-4 text-sm text-[var(--muted)]">
-                {ledger === "personal"
+                {kind === "personal"
                   ? "Teal = flexible · olive = committed · gold = reserves"
                   : "Where the money actually went"}
               </p>
               {loading ? chartFallback : (
                 <MerchantList
                   data={view.merchants}
-                  colorByFlexibility={ledger === "personal"}
+                  colorByFlexibility={kind === "personal"}
                   onSelect={(row) => {
                     if (!rangeFrom || !rangeTo) return;
                     setBreakdown({

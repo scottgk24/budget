@@ -12,6 +12,7 @@ import {
 import { computeFundMonth, ensureDefaultFunds } from "@/lib/funds";
 import { prisma } from "@/lib/db";
 import { splitAccountBalances, sumNetBalances } from "@/lib/accounts";
+import { totalsFromAccounts } from "@/lib/net-worth";
 import { normalizeHoldings } from "@/lib/holdings";
 import {
   monthKey,
@@ -22,12 +23,15 @@ import {
   yearRange,
 } from "@/lib/format";
 import { buildSpendPace } from "@/lib/reports";
+import { parseLedger } from "@/lib/ledger";
+import { isPersonalLedger } from "@/lib/workspace-ledgers";
 
 export async function GET(req: Request) {
   try {
     const { workspace } = await ensureUserAndWorkspace();
     const { searchParams } = new URL(req.url);
-    const ledger = (searchParams.get("ledger") as "personal" | "business") || "personal";
+    const ledger = parseLedger(searchParams.get("ledger")) ?? "personal";
+    const isPersonal = await isPersonalLedger(workspace.id, ledger);
     const month = searchParams.get("month") || monthKey();
     const year = yearFromPeriod(month);
     const { start, end } = monthRange(month);
@@ -163,7 +167,7 @@ export async function GET(req: Request) {
           budgetPeriod: annual ? ("annual" as const) : ("monthly" as const),
           monthSpent: row._sum.amount ?? 0,
           fundKind:
-            ledger === "personal"
+            isPersonal
               ? fundKindForSlug(defaultFundSlugForCategoryName(name))
               : null,
         };
@@ -204,7 +208,7 @@ export async function GET(req: Request) {
     let flexibleLeft: number | null = null;
     let flexibleOverspend = 0;
 
-    if (ledger === "personal") {
+    if (isPersonal) {
       await ensureDefaultFunds(workspace.id);
       fundPlan = await computeFundMonth({ workspaceId: workspace.id, month });
       if (fundPlan) {
@@ -226,7 +230,7 @@ export async function GET(req: Request) {
       }
     }
 
-    const useFlexiblePace = ledger === "personal" && fundPlan != null;
+    const useFlexiblePace = isPersonal && fundPlan != null;
     const paceBudget = useFlexiblePace ? flexibleBudget : budgetTotal;
     const paceSpent = useFlexiblePace ? flexibleSpend : spent;
 
@@ -243,6 +247,7 @@ export async function GET(req: Request) {
       spendPace.freeToSpend = Math.max(0, flexibleLeft);
     }
 
+    const wealth = totalsFromAccounts(accounts);
     const balances = splitAccountBalances(accounts, holdings);
     const holdingsNormalized = normalizeHoldings(
       holdings.map((h) => ({
@@ -256,16 +261,18 @@ export async function GET(req: Request) {
       year,
       ledger,
       totalBalance,
+      assets: wealth.assets,
+      liabilities: wealth.liabilities,
       cashBalance: balances.cash,
       otherAssetBalance: balances.otherAssets,
       creditCardDebt: balances.creditCards,
       accountCount: accounts.length,
       spent,
-      fixedSpend: ledger === "personal" ? committedSpend : null,
-      discretionarySpend: ledger === "personal" ? flexibleSpend : null,
-      reserveSpend: ledger === "personal" ? reserveSpend : null,
-      fixedBudget: ledger === "personal" ? committedBudget : null,
-      discretionaryBudget: ledger === "personal" ? flexibleBudget : null,
+      fixedSpend: isPersonal ? committedSpend : null,
+      discretionarySpend: isPersonal ? flexibleSpend : null,
+      reserveSpend: isPersonal ? reserveSpend : null,
+      fixedBudget: isPersonal ? committedBudget : null,
+      discretionaryBudget: isPersonal ? flexibleBudget : null,
       flexibleLeft,
       flexibleOverspend,
       fundPlan,

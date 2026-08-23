@@ -146,6 +146,15 @@ function PrivacyToggleButton({ className }: { className?: string }) {
   );
 }
 
+function IconNetWorth(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden {...props} className={iconClass(props.className)}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16.5 9 11l4 3.5 7-8" />
+      <path strokeLinecap="round" d="M4 19h16" />
+    </svg>
+  );
+}
+
 function IconReports(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden {...props} className={iconClass(props.className)}>
@@ -185,6 +194,7 @@ const NAV: Array<{
   { href: "/transactions", icon: IconTransactions, label: () => "Transactions", demo: true },
   { href: "/budgets", icon: IconBudgets, label: (c) => c.navBudgets, demo: true },
   { href: "/reports", icon: IconReports, label: () => "Reports", demo: true },
+  { href: "/investments", icon: IconNetWorth, label: (c) => c.navInvestments, demo: true },
   { href: "/recurring", icon: IconRecurring, label: () => "Recurring", demo: true },
   { href: "/goals", icon: IconGoals, label: () => "Goals", demo: true },
   { href: "/accounts", icon: IconAccounts, label: () => "Accounts", demo: true },
@@ -225,7 +235,7 @@ function ExitDemoButton({ collapsed }: { collapsed?: boolean }) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { isDemo, href: appHref } = useAppBasePath();
-  const { ledger, setLedger } = useLedger();
+  const { ledger, kind, ledgers, setLedger } = useLedger();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
@@ -268,6 +278,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       collapsed={false}
       hydrated={hydrated}
       ledger={ledger}
+      kind={kind}
+      ledgers={ledgers}
       setLedger={setLedger}
       onToggleCollapsed={toggleCollapsed}
       onCloseMobile={() => setMobileOpen(false)}
@@ -291,6 +303,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           collapsed={hydrated && collapsed}
           hydrated={hydrated}
           ledger={ledger}
+          kind={kind}
+          ledgers={ledgers}
           setLedger={setLedger}
           onToggleCollapsed={toggleCollapsed}
           showCloseMobile={false}
@@ -358,6 +372,8 @@ function SidebarPanel({
   collapsed,
   hydrated,
   ledger,
+  kind,
+  ledgers,
   setLedger,
   onToggleCollapsed,
   onCloseMobile,
@@ -368,15 +384,17 @@ function SidebarPanel({
   pathname: string;
   collapsed: boolean;
   hydrated: boolean;
-  ledger: "personal" | "business";
-  setLedger: (ledger: "personal" | "business") => void;
+  ledger: string;
+  kind: "personal" | "business";
+  ledgers: Array<{ slug: string; name: string; kind: "personal" | "business" }>;
+  setLedger: (ledger: string) => void;
   onToggleCollapsed: () => void;
   onCloseMobile?: () => void;
   showCloseMobile: boolean;
   isDemo: boolean;
   appHref: (path: string) => string;
 }) {
-  const copy = ledgerCopy(ledger);
+  const copy = ledgerCopy(kind);
   const navItems = NAV.filter((item) => !isDemo || item.demo);
   return (
     <div className="flex h-full flex-col">
@@ -452,61 +470,32 @@ function SidebarPanel({
         )}
       >
         {collapsed ? (
-          <div className="flex flex-col gap-1" title={ledger === "personal" ? "Personal" : "Business"}>
-            <button
-              type="button"
-              onClick={() => setLedger("personal")}
-              aria-label="Personal ledger"
-              className={cn(
-                "rounded-md px-2 py-1 text-[0.65rem] font-medium uppercase tracking-wide transition-colors",
-                ledger === "personal"
-                  ? "bg-[var(--accent)] text-[var(--on-accent)]"
-                  : "text-[var(--muted)] hover:text-[var(--fg)]",
-              )}
-            >
-              P
-            </button>
-            <button
-              type="button"
-              onClick={() => setLedger("business")}
-              aria-label="Business ledger"
-              className={cn(
-                "rounded-md px-2 py-1 text-[0.65rem] font-medium uppercase tracking-wide transition-colors",
-                ledger === "business"
-                  ? "bg-[var(--accent)] text-[var(--on-accent)]"
-                  : "text-[var(--muted)] hover:text-[var(--fg)]",
-              )}
-            >
-              B
-            </button>
-          </div>
+          <select
+            aria-label="Ledger"
+            title={ledgers.find((row) => row.slug === ledger)?.name ?? "Ledger"}
+            value={ledger}
+            onChange={(e) => setLedger(e.target.value)}
+            className="w-10 rounded-md border border-[var(--border)] bg-[var(--surface)] py-1 text-center text-[0.65rem] font-medium uppercase"
+          >
+            {ledgers.map((row) => (
+              <option key={row.slug} value={row.slug}>
+                {row.name.slice(0, 1)}
+              </option>
+            ))}
+          </select>
         ) : (
-          <div className="flex rounded-lg border border-[var(--border)] p-0.5 text-sm">
-            <button
-              type="button"
-              onClick={() => setLedger("personal")}
-              className={cn(
-                "flex-1 rounded-md px-2 py-1.5 transition-colors",
-                ledger === "personal"
-                  ? "bg-[var(--accent)] text-[var(--on-accent)]"
-                  : "text-[var(--muted)] hover:text-[var(--fg)]",
-              )}
-            >
-              Personal
-            </button>
-            <button
-              type="button"
-              onClick={() => setLedger("business")}
-              className={cn(
-                "flex-1 rounded-md px-2 py-1.5 transition-colors",
-                ledger === "business"
-                  ? "bg-[var(--accent)] text-[var(--on-accent)]"
-                  : "text-[var(--muted)] hover:text-[var(--fg)]",
-              )}
-            >
-              Business
-            </button>
-          </div>
+          <select
+            aria-label="Ledger"
+            value={ledger}
+            onChange={(e) => setLedger(e.target.value)}
+            className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 py-1.5 text-sm"
+          >
+            {ledgers.map((row) => (
+              <option key={row.slug} value={row.slug}>
+                {row.name}
+              </option>
+            ))}
+          </select>
         )}
 
         {!showCloseMobile ? (

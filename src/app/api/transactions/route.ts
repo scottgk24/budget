@@ -7,13 +7,14 @@ import { OTHER_CATEGORY, REVIEW_CATEGORY, REVIEW_QUEUE_CATEGORY_NAMES } from "@/
 import { ensureDefaultFunds, fundFieldsForCategoryChange, fundIdForCategory } from "@/lib/funds";
 import { prisma } from "@/lib/db";
 import { monthRange } from "@/lib/format";
-import type { Ledger } from "@/lib/types";
+import { parseLedger } from "@/lib/ledger";
+import { ledgerSlugSchema, moveTransactionToLedger } from "@/lib/workspace-ledgers";
 
 export async function GET(req: Request) {
   try {
     const { workspace } = await ensureUserAndWorkspace();
     const { searchParams } = new URL(req.url);
-    const ledger = searchParams.get("ledger") as "personal" | "business" | null;
+    const ledger = parseLedger(searchParams.get("ledger"));
     const month = searchParams.get("month");
     const from = searchParams.get("from")?.trim() || null;
     const to = searchParams.get("to")?.trim() || null;
@@ -26,7 +27,7 @@ export async function GET(req: Request) {
     const take = Math.min(Number(searchParams.get("limit") ?? 100), 500);
 
     const where: Record<string, unknown> = { workspaceId: workspace.id };
-    if (ledger === "personal" || ledger === "business") {
+    if (ledger) {
       where.ledger = ledger;
     }
     if (from && to) {
@@ -147,7 +148,7 @@ const patchSchema = z.object({
   id: z.string(),
   categoryId: z.string().nullable().optional(),
   fundId: z.string().nullable().optional(),
-  ledger: z.enum(["personal", "business"]).optional(),
+  ledger: ledgerSlugSchema.optional(),
   notes: z.string().nullable().optional(),
   /** Persist a merchant → category rule and apply to past matches. */
   rememberMerchant: z.boolean().optional(),
@@ -166,6 +167,16 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    const nextLedger = body.ledger ?? existing.ledger;
+
+    if (body.ledger && body.ledger !== existing.ledger) {
+      await moveTransactionToLedger({
+        workspaceId: workspace.id,
+        transactionId: existing.id,
+        toLedger: body.ledger,
+      });
+    }
+
     if (body.categoryId) {
       const cat = await prisma.category.findFirst({
         where: { id: body.categoryId, workspaceId: workspace.id },
@@ -177,7 +188,7 @@ export async function PATCH(req: Request) {
 
     if (body.fundId) {
       const fund = await prisma.fund.findFirst({
-        where: { id: body.fundId, workspaceId: workspace.id, ledger: "personal" },
+        where: { id: body.fundId, workspaceId: workspace.id, ledger: nextLedger },
       });
       if (!fund || fund.kind === "buffer") {
         return NextResponse.json({ error: "Invalid fund" }, { status: 400 });
@@ -185,7 +196,6 @@ export async function PATCH(req: Request) {
     }
 
     const categoryChanging = body.categoryId !== undefined;
-    const nextLedger = (body.ledger ?? existing.ledger) as Ledger;
     const nextCategoryId =
       body.categoryId === undefined ? existing.categoryId : body.categoryId;
 
@@ -193,10 +203,10 @@ export async function PATCH(req: Request) {
     let fundSource: string | null | undefined = undefined;
     if (body.fundId !== undefined) {
       fundId = body.fundId;
-      if (body.fundId && nextLedger === "personal") {
+      if (body.fundId && nextLedger) {
         const defaultId = await fundIdForCategory({
           workspaceId: workspace.id,
-          ledger: "personal",
+          ledger: nextLedger,
           categoryId: nextCategoryId,
         });
         fundSource = body.fundId === defaultId ? "category" : "user";
@@ -243,7 +253,7 @@ export async function PATCH(req: Request) {
     ) {
       ruleApplied = await upsertMerchantRule({
         workspaceId: workspace.id,
-        ledger: (body.ledger ?? transaction.ledger) as Ledger,
+        ledger: body.ledger ?? transaction.ledger,
         merchantName: transaction.merchantName || transaction.name,
         categoryId: body.categoryId,
         applyToPast: body.applyToPast,

@@ -11,6 +11,9 @@ import {
   REVIEW_QUEUE_CATEGORY_NAMES,
 } from "@/lib/categories";
 import { prisma } from "@/lib/db";
+import { parseLedger } from "@/lib/ledger";
+import { detectLedgerMisfit } from "@/lib/ledger-misfit";
+import { getWorkspaceLedger, listWorkspaceLedgers } from "@/lib/workspace-ledgers";
 
 export type ReviewQueueReason = "review" | "uncategorized" | "other";
 
@@ -26,12 +29,17 @@ export async function GET(req: Request) {
     await ensureMissingDefaultCategories(workspace.id);
 
     const { searchParams } = new URL(req.url);
-    const ledger = searchParams.get("ledger") as "personal" | "business" | null;
+    const ledger = parseLedger(searchParams.get("ledger")) ?? "personal";
     const take = Math.min(Number(searchParams.get("limit") ?? 12), 40);
     const since = subDays(new Date(), 90);
     const recentSince = subDays(new Date(), 30);
-    const ledgerFilter =
-      ledger === "personal" || ledger === "business" ? { ledger } : {};
+    const ledgerFilter = { ledger };
+
+    const [current, allLedgers] = await Promise.all([
+      getWorkspaceLedger(workspace.id, ledger),
+      listWorkspaceLedgers(workspace.id),
+    ]);
+    const currentKind = current?.kind ?? (ledger === "business" ? "business" : "personal");
 
     const base = {
       workspaceId: workspace.id,
@@ -111,6 +119,42 @@ export async function GET(req: Request) {
         account: tx.account,
       });
 
+    const candidates = await prisma.transaction.findMany({
+      where: {
+        ...base,
+        categoryId: { not: null },
+        NOT: { category: { name: { in: [...REVIEW_QUEUE_CATEGORY_NAMES] } } },
+        date: { gte: recentSince },
+      },
+      include,
+      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+      take: 40,
+    });
+    const opposite = allLedgers.find((row) => row.kind !== currentKind);
+    const misfitItems = candidates
+      .map((tx) => {
+        const misfit = detectLedgerMisfit({
+          currentKind,
+          categoryName: tx.category?.name,
+          merchantName: tx.merchantName,
+          name: tx.name,
+        });
+        if (!misfit) return null;
+        const suggested = allLedgers.find((row) => row.kind === misfit.suggestedKind) ?? opposite;
+        if (!suggested) return null;
+        return {
+          ...mapItem(tx),
+          reason: "misfit" as const,
+          misfit: {
+            ...misfit,
+            suggestedLedger: suggested.slug,
+            suggestedName: suggested.name,
+          },
+        };
+      })
+      .filter((row) => row != null)
+      .slice(0, take);
+
     return NextResponse.json({
       total,
       recentTotal,
@@ -120,9 +164,11 @@ export async function GET(req: Request) {
         review: reviewCount,
         uncategorized: uncategorizedCount,
         other: otherCount,
+        misfit: misfitItems.length,
       },
       items: recentItems.map(mapItem),
       olderItems: olderItems.map(mapItem),
+      misfitItems,
     });
   } catch (err) {
     if (err instanceof AuthError) {

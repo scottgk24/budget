@@ -3,9 +3,10 @@ import { z } from "zod";
 import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import type { Ledger } from "@/lib/types";
+import { ledgerSlugSchema } from "@/lib/workspace-ledgers";
 
 const createSchema = z.object({
-  ledger: z.enum(["personal", "business"]),
+  ledger: ledgerSlugSchema,
   name: z.string().trim().min(1).max(80),
   targetAmount: z.number().positive(),
   currentAmount: z.number().min(0).optional(),

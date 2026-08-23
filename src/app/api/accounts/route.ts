@@ -4,19 +4,21 @@ import { AuthError, assertNotDemo, ensureUserAndWorkspace } from "@/lib/auth";
 import { handleApiError } from "@/lib/api-response";
 import { prisma } from "@/lib/db";
 import { decryptToken } from "@/lib/crypto";
+import { parseLedger } from "@/lib/ledger";
 import { getPlaidClient, isPlaidConfigured } from "@/lib/plaid";
+import { ledgerSlugSchema, moveAccountToLedger } from "@/lib/workspace-ledgers";
 
 export async function GET(req: Request) {
   try {
     const { workspace } = await ensureUserAndWorkspace();
     const { searchParams } = new URL(req.url);
-    const ledger = searchParams.get("ledger") as "personal" | "business" | null;
+    const ledger = parseLedger(searchParams.get("ledger"));
 
     const accounts = await prisma.account.findMany({
       where: {
         workspaceId: workspace.id,
         isHidden: false,
-        ...(ledger === "personal" || ledger === "business" ? { ledger } : {}),
+        ...(ledger ? { ledger } : {}),
       },
       include: {
         plaidItem: {
@@ -59,7 +61,7 @@ export async function GET(req: Request) {
 
 const patchSchema = z.object({
   id: z.string(),
-  ledger: z.enum(["personal", "business"]).optional(),
+  ledger: ledgerSlugSchema.optional(),
   isHidden: z.boolean().optional(),
   name: z.string().min(1).optional(),
 });
@@ -76,21 +78,21 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    if (body.ledger) {
+      await moveAccountToLedger({
+        workspaceId: workspace.id,
+        accountId: body.id,
+        toLedger: body.ledger,
+      });
+    }
+
     const account = await prisma.account.update({
       where: { id: body.id },
       data: {
-        ledger: body.ledger,
         isHidden: body.isHidden,
         name: body.name,
       },
     });
-
-    if (body.ledger) {
-      await prisma.transaction.updateMany({
-        where: { accountId: account.id, workspaceId: workspace.id },
-        data: { ledger: body.ledger },
-      });
-    }
 
     return NextResponse.json({ account });
   } catch (err) {

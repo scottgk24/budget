@@ -278,8 +278,8 @@ function BudgetAmountInput({
 }
 
 export default function BudgetsPage() {
-  const { ledger, isCurrent } = useLedgerGuard();
-  const copy = ledgerCopy(ledger);
+  const { ledger, kind, isCurrent } = useLedgerGuard();
+  const copy = ledgerCopy(kind);
   const { formatCurrency } = useMoneyFormat();
   const month = monthKey();
   const [loadedLedger, setLoadedLedger] = useState<string | null>(null);
@@ -458,7 +458,7 @@ export default function BudgetsPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Save failed");
       setSaved((s) => ({ ...s, [categoryId]: rounded }));
-      setNotice(ledger === "business" ? "Limit saved" : "Budget saved");
+      setNotice(kind === "business" ? "Limit saved" : "Budget saved");
       window.setTimeout(() => setNotice(null), 1500);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
@@ -481,10 +481,10 @@ export default function BudgetsPage() {
       if (!res.ok) throw new Error(json.error ?? "Failed to update period");
       setNotice(
         budgetPeriod === "annual"
-          ? ledger === "business"
+          ? kind === "business"
             ? "Switched to yearly limit"
             : "Switched to yearly budget"
-          : ledger === "business"
+          : kind === "business"
             ? "Switched to monthly limit"
             : "Switched to monthly budget",
       );
@@ -588,7 +588,7 @@ export default function BudgetsPage() {
         <PageSkeleton label="Loading budgets" />
       ) : (
       <>
-      {ledger === "personal" && fundPlan && fundPlan.uncoveredOverspend > 0 ? (
+      {kind === "personal" && fundPlan && fundPlan.uncoveredOverspend > 0 ? (
         <Card className="mb-6 border-[var(--danger)]/40">
           <p className="text-sm font-medium">
             Flexible is {formatCurrency(fundPlan.uncoveredOverspend)} over
@@ -633,7 +633,7 @@ export default function BudgetsPage() {
         <>
           <div
             className={`mb-6 grid gap-4 ${
-              ledger === "personal" ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"
+              kind === "personal" ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"
             }`}
           >
             <Card>
@@ -642,7 +642,7 @@ export default function BudgetsPage() {
                 {formatCurrency(totalBudgeted)}
               </p>
             </Card>
-            {ledger === "personal" ? (
+            {kind === "personal" ? (
               <Card>
                 <p className="text-sm text-[var(--muted)]">Flexible left</p>
                 <p
@@ -771,7 +771,7 @@ export default function BudgetsPage() {
             </div>
 
             <ul className="space-y-2 p-2 sm:p-2.5">
-              {(ledger === "personal"
+              {(kind === "personal"
                 ? fundGroups
                 : [{ fund: null as Fund | null, cats: rows }]
               ).map((group) => (
@@ -824,7 +824,7 @@ export default function BudgetsPage() {
                         </div>
                       ) : null}
                     </div>
-                  ) : ledger === "personal" && group.cats.length > 0 ? (
+                  ) : kind === "personal" && group.cats.length > 0 ? (
                     <p className="px-2 pt-2 text-[11px] font-medium uppercase tracking-wide text-[var(--muted)] first:pt-0">
                       Unassigned
                     </p>
@@ -997,7 +997,7 @@ export default function BudgetsPage() {
                           {saving === cat.id ? (
                             <span className="text-xs text-[var(--muted)]">Saving…</span>
                           ) : null}
-                          {ledger === "personal" ? (
+                          {kind === "personal" ? (
                             <Select
                               value={cat.defaultFundId ?? ""}
                               disabled={saving === cat.id}

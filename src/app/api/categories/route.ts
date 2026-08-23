@@ -6,6 +6,7 @@ import {
 } from "@/lib/auth";
 import { ensureDefaultFunds } from "@/lib/funds";
 import { prisma } from "@/lib/db";
+import { parseLedger } from "@/lib/ledger";
 
 export async function GET(req: Request) {
   try {
@@ -13,12 +14,12 @@ export async function GET(req: Request) {
     await ensureMissingDefaultCategories(workspace.id);
     await ensureDefaultFunds(workspace.id);
     const { searchParams } = new URL(req.url);
-    const ledger = searchParams.get("ledger") as "personal" | "business" | null;
+    const ledger = parseLedger(searchParams.get("ledger"));
 
     const categories = await prisma.category.findMany({
       where: {
         workspaceId: workspace.id,
-        ...(ledger === "personal" || ledger === "business" ? { ledger } : {}),
+        ...(ledger ? { ledger } : {}),
       },
       orderBy: [{ ledger: "asc" }, { name: "asc" }],
     });

@@ -1,4 +1,4 @@
-import { subDays } from "date-fns";
+import { format, subDays, subMonths } from "date-fns";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/db";
 import { monthKey, yearKey } from "@/lib/format";
@@ -735,11 +735,13 @@ const BUSINESS_ANNUAL_BUDGETS: Record<string, number> = {
 
 async function wipeDemoWorkspace(workspaceId: string) {
   await prisma.$transaction([
+    prisma.netWorthSnapshot.deleteMany({ where: { workspaceId } }),
     prisma.transaction.deleteMany({ where: { workspaceId } }),
     prisma.holding.deleteMany({ where: { workspaceId } }),
     prisma.budget.deleteMany({ where: { workspaceId } }),
     prisma.goal.deleteMany({ where: { workspaceId } }),
     prisma.categoryRule.deleteMany({ where: { workspaceId } }),
+    prisma.workspaceLedger.deleteMany({ where: { workspaceId } }),
     prisma.account.deleteMany({ where: { workspaceId } }),
     prisma.plaidItem.deleteMany({ where: { workspaceId } }),
     prisma.category.deleteMany({ where: { workspaceId } }),
@@ -903,6 +905,89 @@ async function populateDemoData(workspaceId: string) {
       },
     ],
   });
+
+  const ira = await prisma.account.create({
+    data: {
+      workspaceId,
+      plaidItemId: personalItem.id,
+      plaidAccountId: `demo-acct-ira-${workspaceId.slice(-8)}`,
+      name: "Roth IRA",
+      officialName: "Fidelity Roth IRA",
+      mask: "4410",
+      type: "investment",
+      subtype: "ira",
+      ledger: "personal",
+      currentBalance: 62480,
+    },
+  });
+
+  await prisma.holding.createMany({
+    data: [
+      {
+        workspaceId,
+        accountId: ira.id,
+        symbol: "FXAIX",
+        name: "Fidelity 500 Index Fund",
+        quantity: 285,
+        price: 198.4,
+        value: 56544,
+        costBasis: 41200,
+        asOf: new Date(),
+      },
+      {
+        workspaceId,
+        accountId: ira.id,
+        symbol: "FXNAX",
+        name: "Fidelity US Bond Index Fund",
+        quantity: 52,
+        price: 114.15,
+        value: 5935.8,
+        costBasis: 5600,
+        asOf: new Date(),
+      },
+    ],
+  });
+
+  await prisma.account.create({
+    data: {
+      workspaceId,
+      name: "Home",
+      officialName: "Primary residence",
+      type: "other",
+      subtype: "real estate",
+      ledger: "personal",
+      currentBalance: 425000,
+    },
+  });
+
+  await prisma.account.create({
+    data: {
+      workspaceId,
+      name: "Mortgage",
+      officialName: "30-year mortgage",
+      type: "loan",
+      subtype: "mortgage",
+      ledger: "personal",
+      currentBalance: 318400,
+    },
+  });
+
+  const snapshotRows = Array.from({ length: 12 }, (_, i) => {
+    const monthsAgo = 11 - i;
+    const when = subMonths(new Date(), monthsAgo);
+    const growth = i / 11;
+    const assets = 480000 + growth * 74600;
+    const liabilities = 338000 - growth * 18360;
+    return {
+      workspaceId,
+      ledger: "personal",
+      date: format(when, "yyyy-MM-dd"),
+      assets,
+      liabilities,
+      net: assets - liabilities,
+    };
+  });
+  await prisma.netWorthSnapshot.createMany({ data: snapshotRows });
 
   const categories = await prisma.category.findMany({ where: { workspaceId } });
   const catId = (ledger: string, name: string) =>

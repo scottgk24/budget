@@ -40,9 +40,9 @@ type Item = {
 };
 
 export default function AccountsPage() {
-  const { ledger, isCurrent } = useLedgerGuard();
+  const { ledger, kind, ledgers, isCurrent } = useLedgerGuard();
   const { isDemo } = useAppBasePath();
-  const copy = ledgerCopy(ledger);
+  const copy = ledgerCopy(kind);
   const { formatCurrency } = useMoneyFormat();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [dataLedger, setDataLedger] = useState<string | null>(null);
@@ -220,8 +220,11 @@ export default function AccountsPage() {
                   value={acct.ledger}
                   onChange={(e) => void setAccountLedger(acct.id, e.target.value)}
                 >
-                  <option value="personal">Personal</option>
-                  <option value="business">Business</option>
+                  {ledgers.map((row) => (
+                    <option key={row.slug} value={row.slug}>
+                      {row.name}
+                    </option>
+                  ))}
                 </Select>
               </div>
             </Card>

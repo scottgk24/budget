@@ -9,6 +9,7 @@ import { fundFieldsForCategoryChange } from "@/lib/funds";
 import { prisma } from "@/lib/db";
 import { decryptToken } from "@/lib/crypto";
 import { getPlaidClient } from "@/lib/plaid";
+import { captureNetWorthSnapshots } from "@/lib/net-worth";
 import { Transaction, RemovedTransaction, InvestmentTransaction } from "plaid";
 
 export async function syncItemTransactions(plaidItemId: string) {
@@ -396,5 +397,6 @@ export async function syncPlaidItem(plaidItemId: string) {
     }
   }
 
+  await captureNetWorthSnapshots(item.workspaceId);
   return results;
 }

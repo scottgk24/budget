@@ -7,10 +7,11 @@ import { prisma } from "@/lib/db";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { getPlaidClient, isPlaidConfigured } from "@/lib/plaid";
 import { syncPlaidItem } from "@/lib/sync";
+import { ledgerSlugSchema } from "@/lib/workspace-ledgers";
 
 const bodySchema = z.object({
   publicToken: z.string().min(1),
-  ledger: z.enum(["personal", "business"]).default("personal"),
+  ledger: ledgerSlugSchema.default("personal"),
   institution: z
     .object({
       institution_id: z.string().optional(),

@@ -53,6 +53,8 @@ const CategoryPieChart = dynamic(
 type DashboardData = {
   month: string;
   totalBalance: number;
+  assets?: number;
+  liabilities?: number;
   cashBalance?: number;
   otherAssetBalance?: number;
   creditCardDebt?: number;
@@ -139,9 +141,9 @@ const PERIODS: Array<{ id: MetricsGranularity; label: string }> = [
 ];
 
 export default function DashboardPage() {
-  const { ledger, isCurrent } = useLedgerGuard();
+  const { ledger, kind, isCurrent } = useLedgerGuard();
   const { href: appHref } = useAppBasePath();
-  const copy = ledgerCopy(ledger);
+  const copy = ledgerCopy(kind);
   const { formatCurrency, formatSignedCurrency } = useMoneyFormat();
   const [data, setData] = useState<DashboardData | null>(null);
   const [dataLedger, setDataLedger] = useState<string | null>(null);
@@ -238,8 +240,28 @@ export default function DashboardPage() {
         />
       ) : (
         <>
-          {ledger === "personal" ? (
+          {kind === "personal" ? (
             <div className="grid gap-4 sm:grid-cols-3">
+              <Card>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm text-[var(--muted)]">Net worth</p>
+                  <Link
+                    href={appHref("/investments")}
+                    className="text-xs text-[var(--accent)]"
+                  >
+                    Investments
+                  </Link>
+                </div>
+                <p className="mt-2 font-display text-2xl">
+                  {formatCurrency(view.totalBalance)}
+                </p>
+                <p className="mt-1 text-xs text-[var(--muted)]">
+                  Assets {formatCurrency(view.assets ?? view.totalBalance)}
+                  {(view.liabilities ?? 0) > 0.5
+                    ? ` · debts ${formatCurrency(view.liabilities ?? 0)}`
+                    : ""}
+                </p>
+              </Card>
               <Card>
                 <p className="text-sm text-[var(--muted)]">Cash</p>
                 <p className="mt-2 font-display text-2xl">
@@ -259,43 +281,56 @@ export default function DashboardPage() {
                 </p>
                 <p className="mt-1 text-xs text-[var(--muted)]">Amount owed</p>
               </Card>
-              <Card>
-                <p className="text-sm text-[var(--muted)]">Net</p>
-                <p className="mt-2 font-display text-2xl">
-                  {formatCurrency(view.totalBalance)}
-                </p>
-                <p className="mt-1 text-xs text-[var(--muted)]">
-                  Linked accounts, cards subtracted
-                </p>
-              </Card>
             </div>
           ) : null}
 
           <div
             className={`grid gap-4 sm:grid-cols-2 lg:grid-cols-3 ${
-              ledger === "personal" ? "mt-4" : ""
+              kind === "personal" ? "mt-4" : ""
             }`}
           >
             {ledger === "business" ? (
-              <Card>
-                <p className="text-sm text-[var(--muted)]">{copy.balance}</p>
-                <p className="mt-2 font-display text-2xl">
-                  {formatCurrency(view.totalBalance)}
-                </p>
-              </Card>
+              <>
+                <Card>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm text-[var(--muted)]">Net worth</p>
+                    <Link
+                      href={appHref("/investments")}
+                      className="text-xs text-[var(--accent)]"
+                    >
+                      Investments
+                    </Link>
+                  </div>
+                  <p className="mt-2 font-display text-2xl">
+                    {formatCurrency(view.totalBalance)}
+                  </p>
+                  <p className="mt-1 text-xs text-[var(--muted)]">
+                    Assets {formatCurrency(view.assets ?? view.totalBalance)}
+                    {(view.liabilities ?? 0) > 0.5
+                      ? ` · debts ${formatCurrency(view.liabilities ?? 0)}`
+                      : ""}
+                  </p>
+                </Card>
+                <Card>
+                  <p className="text-sm text-[var(--muted)]">{copy.balance}</p>
+                  <p className="mt-2 font-display text-2xl">
+                    {formatCurrency(view.cashBalance ?? view.totalBalance)}
+                  </p>
+                </Card>
+              </>
             ) : null}
             <Card>
               <p className="text-sm text-[var(--muted)]">
-                {ledger === "personal" ? "Flexible" : copy.spentThisMonth}
+                {kind === "personal" ? "Flexible" : copy.spentThisMonth}
               </p>
               <p className="mt-2 font-display text-2xl">
                 {formatCurrency(
-                  ledger === "personal"
+                  kind === "personal"
                     ? (view.discretionarySpend ?? view.spent)
                     : view.spent,
                 )}
               </p>
-              {ledger === "personal" && view.fixedSpend != null ? (
+              {kind === "personal" && view.fixedSpend != null ? (
                 <p className="mt-1 text-xs text-[var(--muted)]">
                   Committed {formatCurrency(view.fixedSpend)}
                   {view.reserveSpend
@@ -311,7 +346,7 @@ export default function DashboardPage() {
               <p className="mt-2 font-display text-2xl">
                 {formatCurrency(view.income)}
               </p>
-              {ledger === "personal" && view.incomeIncomplete ? (
+              {kind === "personal" && view.incomeIncomplete ? (
                 <p className="mt-1 text-xs text-[var(--muted)]">
                   Month incomplete — posted income is below the recent
                   {view.trailingIncomeAverage
@@ -323,7 +358,7 @@ export default function DashboardPage() {
             </Card>
             <Card>
               <p className="text-sm text-[var(--muted)]">
-                {ledger === "personal" && view.spendPace?.freeToSpend != null
+                {kind === "personal" && view.spendPace?.freeToSpend != null
                   ? "Flexible left"
                   : view.spendPace?.freeToSpend != null
                     ? "Free to spend"
@@ -431,10 +466,10 @@ export default function DashboardPage() {
 
             <div
               className={`mb-4 grid gap-4 ${
-                ledger === "personal" ? "sm:grid-cols-2 lg:grid-cols-5" : "sm:grid-cols-3"
+                kind === "personal" ? "sm:grid-cols-2 lg:grid-cols-5" : "sm:grid-cols-3"
               }`}
             >
-              {ledger === "personal" ? (
+              {kind === "personal" ? (
                 <>
                   <Card>
                     <p className="text-sm text-[var(--muted)]">Flexible</p>
@@ -503,7 +538,7 @@ export default function DashboardPage() {
             <div className="grid gap-6 lg:grid-cols-2">
               <Card>
                 <h3 className="mb-3 font-display text-lg">
-                  {ledger === "personal"
+                  {kind === "personal"
                     ? "Income vs committed, flexible & reserves"
                     : copy.incomeVsSpend}
                 </h3>
@@ -518,7 +553,7 @@ export default function DashboardPage() {
                     selectedKey={selectedPeriodKey}
                     incomeLabel={copy.income}
                     spendLabel={copy.spend}
-                    splitSpend={ledger === "personal"}
+                    splitSpend={kind === "personal"}
                   />
                 )}
               </Card>
@@ -583,12 +618,12 @@ export default function DashboardPage() {
 
           <div
             className={`mt-8 grid gap-6 ${
-              ledger === "personal" && (metricsView?.topMerchants?.length ?? 0) > 0
+              kind === "personal" && (metricsView?.topMerchants?.length ?? 0) > 0
                 ? "lg:grid-cols-3"
                 : "lg:grid-cols-2"
             }`}
           >
-            {ledger === "personal" && (metricsView?.topMerchants?.length ?? 0) > 0 ? (
+            {kind === "personal" && (metricsView?.topMerchants?.length ?? 0) > 0 ? (
               <Card>
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="font-display text-lg">Top merchants</h2>
@@ -653,7 +688,7 @@ export default function DashboardPage() {
                         <div className="flex items-center justify-between text-sm">
                           <span>
                             {row.name}
-                            {row.fundKind && ledger === "personal" ? (
+                            {row.fundKind && kind === "personal" ? (
                               <span className="ml-1.5 text-[11px] text-[var(--muted)]">
                                 {row.fundKind === "flexible"
                                   ? "flex"
@@ -736,9 +771,14 @@ export default function DashboardPage() {
           {view.holdings.length > 0 ? (
             <div className="mt-6 grid gap-6 lg:grid-cols-2">
               <Card>
-                <h2 className="mb-4 font-display text-lg">
-                  {copy.holdings}
-                </h2>
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="font-display text-lg">
+                    {copy.holdings}
+                  </h2>
+                  <Link href={appHref("/investments")} className="text-sm text-[var(--accent)]">
+                    All
+                  </Link>
+                </div>
                 <ul className="divide-y divide-[var(--border)]">
                   {view.holdings.map((h) => (
                     <li key={h.id} className="flex items-center justify-between py-3 text-sm">

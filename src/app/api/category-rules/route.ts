@@ -4,6 +4,7 @@ import { AuthError, ensureUserAndWorkspace } from "@/lib/auth";
 import { upsertMerchantRule } from "@/lib/categorize";
 import { prisma } from "@/lib/db";
 import type { Ledger } from "@/lib/types";
+import { ledgerSlugSchema } from "@/lib/workspace-ledgers";
 
 export async function GET(req: Request) {
   try {
@@ -27,7 +28,7 @@ export async function GET(req: Request) {
 }
 
 const createSchema = z.object({
-  ledger: z.enum(["personal", "business"]),
+  ledger: ledgerSlugSchema,
   merchantName: z.string().min(1),
   categoryId: z.string().min(1),
   applyToPast: z.boolean().optional(),

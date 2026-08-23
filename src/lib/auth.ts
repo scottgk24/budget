@@ -4,13 +4,13 @@ import { prisma } from "@/lib/db";
 import {
   defaultAnnualCategoriesForLedger,
   defaultBudgetPeriodForName,
-  defaultCategoriesForLedger,
 } from "@/lib/categories";
 import { ensureDefaultFunds } from "@/lib/funds";
 import { ensureDemoWorkspace, isDemoRequest } from "@/lib/demo";
 import { isClerkConfigured } from "@/lib/env";
 import { monthKey, yearKey } from "@/lib/format";
 import { isProductionRuntime } from "@/lib/runtime";
+import { ensureWorkspaceLedgers, seedCategoriesForLedger } from "@/lib/workspace-ledgers";
 
 export class AuthError extends Error {
   status: number;
@@ -270,37 +270,19 @@ export const getWorkspaceContext = cache(async () => ensureUserAndWorkspace());
 export async function ensureMissingDefaultCategories(
   workspaceId: string,
 ): Promise<number> {
-  const desired = [
-    ...defaultCategoriesForLedger("personal").map((name) => ({
-      workspaceId,
-      name,
-      ledger: "personal" as const,
-      isDefault: true,
-      budgetPeriod: defaultBudgetPeriodForName(name, "personal"),
-    })),
-    ...defaultCategoriesForLedger("business").map((name) => ({
-      workspaceId,
-      name,
-      ledger: "business" as const,
-      isDefault: true,
-      budgetPeriod: defaultBudgetPeriodForName(name, "business"),
-    })),
-  ];
-
-  const existing = await prisma.category.findMany({
-    where: { workspaceId },
-    select: { name: true, ledger: true },
-  });
-  const have = new Set(existing.map((c) => `${c.ledger}:${c.name}`));
-  const missing = desired.filter((c) => !have.has(`${c.ledger}:${c.name}`));
-  if (missing.length === 0) return 0;
-  const result = await prisma.category.createMany({ data: missing });
-  return result.count;
+  const ledgers = await ensureWorkspaceLedgers(workspaceId);
+  const before = await prisma.category.count({ where: { workspaceId } });
+  for (const ledger of ledgers) {
+    await seedCategoriesForLedger(workspaceId, ledger.slug, ledger.kind);
+  }
+  const after = await prisma.category.count({ where: { workspaceId } });
+  return Math.max(0, after - before);
 }
 
 /** Insert missing default categories. Returns how many rows were created. */
 export async function seedDefaultCategories(workspaceId: string): Promise<number> {
   const created = await ensureMissingDefaultCategories(workspaceId);
+  const ledgers = await ensureWorkspaceLedgers(workspaceId);
 
   const existing = await prisma.category.findMany({
     where: { workspaceId },
@@ -310,7 +292,8 @@ export async function seedDefaultCategories(workspaceId: string): Promise<number
   // Align lumpy defaults to annual even if they already existed as monthly.
   const toAnnual = existing.filter((c) => {
     const annual = defaultAnnualCategoriesForLedger(
-      c.ledger === "business" ? "business" : "personal",
+      ledgers.find((l) => l.slug === c.ledger)?.kind ??
+        (c.ledger === "business" ? "business" : "personal"),
     ) as readonly string[];
     return annual.includes(c.name) && c.budgetPeriod === "monthly";
   });

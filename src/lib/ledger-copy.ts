@@ -1,6 +1,4 @@
 import { formatMonthLabel } from "@/lib/format";
-import type { Ledger } from "@/lib/types";
-
 export type LedgerCopy = {
   dashboardTitle: string;
   balance: string;
@@ -30,6 +28,7 @@ export type LedgerCopy = {
   budgetColumn: string;
   navDashboard: string;
   navBudgets: string;
+  navInvestments: string;
   accountsEmpty: string;
 };
 
@@ -62,6 +61,7 @@ const personal: LedgerCopy = {
   budgetColumn: "Budget",
   navDashboard: "Dashboard",
   navBudgets: "Budgets",
+  navInvestments: "Investments",
   accountsEmpty: "Connect a bank account to get started.",
 };
 
@@ -94,13 +94,16 @@ const business: LedgerCopy = {
   budgetColumn: "Limit",
   navDashboard: "Cash flow",
   navBudgets: "Limits",
+  navInvestments: "Investments",
   accountsEmpty: "Connect a bank account to get started.",
 };
 
-export function ledgerCopy(ledger: Ledger): LedgerCopy {
-  return ledger === "business" ? business : personal;
+export function ledgerCopy(kind: string): LedgerCopy {
+  return kind === "business" ? business : personal;
 }
 
-export function ledgerLabel(ledger: Ledger): string {
-  return ledger === "business" ? "Business" : "Personal";
+export function ledgerLabel(kindOrName: string): string {
+  if (kindOrName === "business") return "Business";
+  if (kindOrName === "personal") return "Personal";
+  return kindOrName;
 }

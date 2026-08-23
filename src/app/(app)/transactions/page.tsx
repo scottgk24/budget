@@ -76,7 +76,7 @@ function sortCategories(cats: Category[]): Category[] {
 }
 
 function TransactionsPageInner() {
-  const { ledger, isCurrent } = useLedgerGuard();
+  const { ledger, kind, name, isCurrent } = useLedgerGuard();
   const { href: appHref } = useAppBasePath();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -286,7 +286,7 @@ function TransactionsPageInner() {
 
   const filterDescription = [
     needsReview ? "Last 90 days" : periodLabel(period),
-    ledger === "personal" ? "Personal" : "Business",
+    name,
     accountId
       ? accounts.find((a) => a.id === accountId)?.name
       : null,
@@ -432,7 +432,7 @@ function TransactionsPageInner() {
                   <th className="px-4 py-3 font-medium">Date</th>
                   <th className="px-4 py-3 font-medium">Description</th>
                   <th className="px-4 py-3 font-medium">Category</th>
-                  {ledger === "personal" ? (
+                  {kind === "personal" ? (
                     <th className="px-4 py-3 font-medium">Fund</th>
                   ) : null}
                   <th className="px-4 py-3 font-medium">Ledger</th>
@@ -473,7 +473,7 @@ function TransactionsPageInner() {
                         ))}
                       </Select>
                     </td>
-                    {ledger === "personal" ? (
+                    {kind === "personal" ? (
                       <td className="px-4 py-3">
                         {tx.category?.name === INCOME_CATEGORY ||
                         tx.category?.name === TRANSFER_CATEGORY ? (

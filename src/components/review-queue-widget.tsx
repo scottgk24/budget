@@ -7,7 +7,7 @@ import { useMoneyFormat } from "@/components/privacy-context";
 import { useAppBasePath } from "@/components/use-app-base-path";
 import { cn, formatDate } from "@/lib/format";
 
-type ReviewReason = "review" | "uncategorized" | "other";
+type ReviewReason = "review" | "uncategorized" | "other" | "misfit";
 
 type ReviewItem = {
   id: string;
@@ -18,21 +18,29 @@ type ReviewItem = {
   pending: boolean;
   reason: ReviewReason;
   account: { name: string; mask: string | null };
+  misfit?: {
+    suggestedKind: "personal" | "business";
+    reason: string;
+    suggestedLedger: string;
+    suggestedName: string;
+  };
 };
 
 type ReviewQueueData = {
   total: number;
   recentTotal?: number;
   olderTotal?: number;
-  counts: { review: number; uncategorized: number; other: number };
+  counts: { review: number; uncategorized: number; other: number; misfit?: number };
   items: ReviewItem[];
   olderItems?: ReviewItem[];
+  misfitItems?: ReviewItem[];
 };
 
 const REASON_LABEL: Record<ReviewReason, string> = {
   review: "Review",
   uncategorized: "Uncategorized",
   other: "Other",
+  misfit: "Wrong ledger",
 };
 
 function IconBell({ className }: { className?: string }) {
@@ -118,7 +126,20 @@ export function ReviewQueueWidget({
   const recentTotal = view?.recentTotal ?? 0;
   const olderTotal = view?.olderTotal ?? 0;
   const olderItems = view?.olderItems ?? [];
+  const misfitItems = view?.misfitItems ?? [];
+  const misfitTotal = view?.counts.misfit ?? misfitItems.length;
+  const badgeTotal = recentTotal + misfitTotal;
   const viewAllHref = appHref("/transactions?needsReview=1");
+
+  async function moveMisfit(item: ReviewItem) {
+    if (!item.misfit) return;
+    await fetch("/api/transactions", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: item.id, ledger: item.misfit.suggestedLedger }),
+    });
+    void load();
+  }
 
   return (
     <div ref={rootRef} className="relative">
@@ -131,11 +152,11 @@ export function ReviewQueueWidget({
         className={cn(
           "relative rounded-md p-2 text-[var(--muted)] transition-colors hover:bg-[var(--accent-soft)] hover:text-[var(--fg)]",
           open && "bg-[var(--accent-soft)] text-[var(--fg)]",
-          recentTotal > 0 && "text-[var(--gold)]",
+          badgeTotal > 0 && "text-[var(--gold)]",
         )}
         aria-label={
           recentTotal > 0
-            ? `Review queue, ${recentTotal} recent item${recentTotal === 1 ? "" : "s"}`
+            ? `Review queue, ${badgeTotal} item${badgeTotal === 1 ? "" : "s"}`
             : "Review queue"
         }
         aria-expanded={open}
@@ -143,9 +164,9 @@ export function ReviewQueueWidget({
         title="Needs review"
       >
         <IconBell />
-        {recentTotal > 0 ? (
+        {badgeTotal > 0 ? (
           <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--accent)] px-1 text-[0.65rem] font-semibold text-[var(--on-accent)]">
-            {recentTotal > 99 ? "99+" : recentTotal}
+            {badgeTotal > 99 ? "99+" : badgeTotal}
           </span>
         ) : null}
       </button>
@@ -189,6 +210,41 @@ export function ReviewQueueWidget({
               <span>Uncat. {view.counts.uncategorized}</span>
               <span aria-hidden>·</span>
               <span>Other {view.counts.other}</span>
+              {misfitTotal > 0 ? (
+                <>
+                  <span aria-hidden>·</span>
+                  <span>Misfit {misfitTotal}</span>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+
+          {misfitItems.length > 0 ? (
+            <div className="border-b border-[var(--border)]">
+              <p className="px-3.5 pt-2 text-[0.7rem] font-medium uppercase tracking-wide text-[var(--muted)]">
+                Might belong elsewhere
+              </p>
+              <ul className="max-h-48 overflow-y-auto py-1">
+                {misfitItems.map((item) => (
+                  <li key={item.id} className="flex items-start justify-between gap-2 px-3.5 py-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {item.merchantName || item.name}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-[var(--muted)]">
+                        {item.misfit?.reason}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-[var(--accent)] hover:bg-[var(--accent-soft)]"
+                      onClick={() => void moveMisfit(item)}
+                    >
+                      Move to {item.misfit?.suggestedName}
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </div>
           ) : null}
 
@@ -222,7 +278,7 @@ export function ReviewQueueWidget({
                 </li>
               ))}
             </ul>
-          ) : recentTotal === 0 && olderTotal === 0 ? (
+          ) : recentTotal === 0 && olderTotal === 0 && misfitTotal === 0 ? (
             <p className="px-3.5 py-8 text-center text-sm text-[var(--muted)]">
               Nothing waiting right now.
             </p>
