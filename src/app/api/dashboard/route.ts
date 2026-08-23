@@ -38,7 +38,6 @@ export async function GET(req: Request) {
     });
 
     const totalBalance = sumNetBalances(accounts);
-    const balances = splitAccountBalances(accounts);
 
     const monthTx = await prisma.transaction.findMany({
       where: {
@@ -113,7 +112,6 @@ export async function GET(req: Request) {
           },
           include: { account: { select: { name: true, id: true } } },
           orderBy: { value: "desc" },
-          take: 40,
         }),
       ]);
 
@@ -245,6 +243,7 @@ export async function GET(req: Request) {
       spendPace.freeToSpend = Math.max(0, flexibleLeft);
     }
 
+    const balances = splitAccountBalances(accounts, holdings);
     const holdingsNormalized = normalizeHoldings(
       holdings.map((h) => ({
         ...h,

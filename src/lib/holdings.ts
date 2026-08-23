@@ -70,3 +70,19 @@ export function isCurrencyHolding(h: { symbol: string | null; name: string }): b
   const name = h.name.toLowerCase();
   return name.includes("currency") || name.includes("cash") || symbol === "USD";
 }
+
+/** Spendable USD cash lots (CUR:USD, named cash) — not BTC, stocks, or FX. */
+export function isUsdCashHolding(h: {
+  symbol: string | null;
+  name: string;
+  isoCurrencyCode?: string | null;
+}): boolean {
+  if (!isCurrencyHolding(h)) return false;
+  const symbol = (h.symbol ?? "").toUpperCase();
+  if (symbol.startsWith("CUR:")) {
+    const code = symbol.slice(4);
+    return code === "" || code === "USD";
+  }
+  const iso = (h.isoCurrencyCode ?? "").toUpperCase();
+  return iso === "USD" || iso === "" || symbol === "USD";
+}

@@ -244,9 +244,9 @@ export default function DashboardPage() {
                   {formatCurrency(view.cashBalance ?? 0)}
                 </p>
                 <p className="mt-1 text-xs text-[var(--muted)]">
-                  Checking and savings
-                  {(view.otherAssetBalance ?? 0) > 0
-                    ? ` · also linked ${formatCurrency(view.otherAssetBalance ?? 0)}`
+                  Bank and brokerage cash
+                  {(view.otherAssetBalance ?? 0) > 0.5
+                    ? ` · +${formatCurrency(view.otherAssetBalance ?? 0)} in other holdings`
                     : ""}
                 </p>
               </Card>
