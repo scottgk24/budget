@@ -13,6 +13,7 @@ import { Button, Card, EmptyState, PageHeader, Select } from "@/components/ui";
 import { isCurrencyHolding } from "@/lib/holdings";
 import {
   formatDate,
+  formatMonthLabel,
   METRICS_RANGES,
   monthKey,
   type MetricsGranularity,
@@ -120,6 +121,7 @@ type MetricsData = {
     savings: number;
     savingsRate: number | null;
     balance?: number;
+    reserveSpend?: number;
   };
   topMerchants?: Array<{
     merchant: string;
@@ -212,7 +214,7 @@ export default function DashboardPage() {
     <div>
       <PageHeader
         title={copy.dashboardTitle}
-        description={`${ledgerLabel(ledger)} · ${monthKey()}`}
+        description={`${ledgerLabel(ledger)} · ${formatMonthLabel(monthKey())}`}
       />
 
       {error ? (
@@ -321,9 +323,11 @@ export default function DashboardPage() {
             </Card>
             <Card>
               <p className="text-sm text-[var(--muted)]">
-                {view.spendPace?.freeToSpend != null
-                  ? "Free to spend"
-                  : copy.budgetRemaining}
+                {ledger === "personal" && view.spendPace?.freeToSpend != null
+                  ? "Flexible left"
+                  : view.spendPace?.freeToSpend != null
+                    ? "Free to spend"
+                    : copy.budgetRemaining}
               </p>
               <p
                 className={`mt-2 font-display text-2xl ${
@@ -427,14 +431,14 @@ export default function DashboardPage() {
 
             <div
               className={`mb-4 grid gap-4 ${
-                ledger === "personal" ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"
+                ledger === "personal" ? "sm:grid-cols-2 lg:grid-cols-5" : "sm:grid-cols-3"
               }`}
             >
               {ledger === "personal" ? (
                 <>
                   <Card>
                     <p className="text-sm text-[var(--muted)]">Flexible</p>
-                    <p className="mt-2 font-display text-xl text-[var(--danger)]">
+                    <p className="mt-2 font-display text-xl text-[var(--flexible)]">
                       {!metricsView
                         ? "…"
                         : formatCurrency(metricsView?.totals.discretionarySpend ?? 0)}
@@ -446,6 +450,14 @@ export default function DashboardPage() {
                       {!metricsView
                         ? "…"
                         : formatCurrency(metricsView?.totals.fixedSpend ?? 0)}
+                    </p>
+                  </Card>
+                  <Card>
+                    <p className="text-sm text-[var(--muted)]">Reserves</p>
+                    <p className="mt-2 font-display text-xl">
+                      {!metricsView
+                        ? "…"
+                        : formatCurrency(metricsView?.totals.reserveSpend ?? 0)}
                     </p>
                   </Card>
                 </>
@@ -536,6 +548,9 @@ export default function DashboardPage() {
                   <h3 className="font-display text-lg">
                     {copy.accountBalance}
                   </h3>
+                  <p className="mt-1 text-xs text-[var(--muted)]">
+                    Estimated from today’s balances and posted transactions
+                  </p>
                 </div>
                 <p className="text-sm tabular-nums text-[var(--muted)]">
                   Now{" "}
@@ -629,7 +644,7 @@ export default function DashboardPage() {
                         : null;
                     const barColor =
                       row.fundKind === "flexible"
-                        ? "bg-[var(--danger)]"
+                        ? "bg-[var(--flexible)]"
                         : row.fundKind === "reserve"
                           ? "bg-[var(--accent)]"
                           : "bg-[var(--accent)]";
@@ -654,11 +669,17 @@ export default function DashboardPage() {
                             ) : null}
                           </span>
                           <span className="text-[var(--muted)]">
-                            {formatCurrency(row.spent)}
-                            {row.budget != null ? ` / ${formatCurrency(row.budget)}` : ""}
-                            {annual && row.budget != null ? (
-                              <span className="text-[11px]"> /yr</span>
-                            ) : null}
+                            {annual
+                              ? `YTD ${formatCurrency(row.spent)}${
+                                  row.budget != null
+                                    ? ` / ${formatCurrency(row.budget)}/yr`
+                                    : ""
+                                }`
+                              : `${formatCurrency(row.spent)}${
+                                  row.budget != null
+                                    ? ` / ${formatCurrency(row.budget)}`
+                                    : ""
+                                }`}
                           </span>
                         </div>
                         {pct != null ? (

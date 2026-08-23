@@ -365,7 +365,7 @@ export async function computeFundMonth(opts: {
       incomeByMonth.set(m, (incomeByMonth.get(m) ?? 0) + Math.abs(tx.amount));
       continue;
     }
-    if (!isSpendAmount(tx.amount, name) || tx.amount <= 0) continue;
+    if (!isSpendAmount(tx.amount, name)) continue;
     const fundId =
       tx.fundId ??
       tx.category?.defaultFundId ??

@@ -167,7 +167,7 @@ export async function GET(req: Request) {
 
     const topMerchants = aggregateMerchants(
       transactions
-        .filter((tx) => isSpendAmount(tx.amount, tx.category?.name) && tx.amount > 0)
+        .filter((tx) => isSpendAmount(tx.amount, tx.category?.name))
         .map((tx) => ({
           amount: tx.amount,
           name: tx.name,

@@ -1,4 +1,4 @@
-import { differenceInCalendarDays } from "date-fns";
+import { differenceInCalendarDays, format } from "date-fns";
 import { isIncomeAmount, isSpendAmount } from "@/lib/categories";
 
 export type TxForAge = {
@@ -38,7 +38,13 @@ export function computeAgeOfMoney(
       lots.push({ remaining: Math.abs(tx.amount), date: tx.date });
       continue;
     }
-    if (!isSpendAmount(tx.amount, tx.categoryName) || tx.amount <= 0) continue;
+    if (!isSpendAmount(tx.amount, tx.categoryName)) continue;
+
+    // Refunds restore cash as a new lot; they do not consume income.
+    if (tx.amount < 0) {
+      lots.push({ remaining: Math.abs(tx.amount), date: tx.date });
+      continue;
+    }
 
     let need = tx.amount;
     let weightedAge = 0;
@@ -72,7 +78,7 @@ export function computeAgeOfMoney(
   // Collapse to one point per calendar day (last age that day)
   const byDay = new Map<string, number>();
   for (const s of spendAges) {
-    byDay.set(s.date.toISOString().slice(0, 10), Math.round(s.age * 10) / 10);
+    byDay.set(format(s.date, "yyyy-MM-dd"), Math.round(s.age * 10) / 10);
   }
   const series = [...byDay.entries()]
     .sort(([a], [b]) => a.localeCompare(b))

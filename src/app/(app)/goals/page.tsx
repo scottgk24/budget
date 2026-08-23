@@ -149,35 +149,55 @@ export default function GoalsPage() {
           onSubmit={(e) => void createGoal(e)}
           className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
         >
-          <Input
-            placeholder="Name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-          />
-          <Input
-            type="number"
-            step="0.01"
-            min="0.01"
-            placeholder="Target $"
-            value={targetAmount}
-            onChange={(e) => setTargetAmount(e.target.value)}
-            required
-          />
-          <Input
-            type="number"
-            step="0.01"
-            min="0"
-            placeholder="Saved so far"
-            value={currentAmount}
-            onChange={(e) => setCurrentAmount(e.target.value)}
-          />
-          <Input
-            type="date"
-            value={targetDate}
-            onChange={(e) => setTargetDate(e.target.value)}
-          />
-          <Button type="submit" disabled={busy || !name || !targetAmount}>
+          <label className="block">
+            <span className="mb-1 block text-xs text-[var(--muted)]">Name</span>
+            <Input
+              placeholder="Emergency fund"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              aria-label="Name"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs text-[var(--muted)]">Target $</span>
+            <Input
+              type="number"
+              step="0.01"
+              min="0.01"
+              placeholder="10000"
+              value={targetAmount}
+              onChange={(e) => setTargetAmount(e.target.value)}
+              required
+              aria-label="Target $"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs text-[var(--muted)]">Saved so far</span>
+            <Input
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="0"
+              value={currentAmount}
+              onChange={(e) => setCurrentAmount(e.target.value)}
+              aria-label="Saved so far"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs text-[var(--muted)]">Target date</span>
+            <Input
+              type="date"
+              value={targetDate}
+              onChange={(e) => setTargetDate(e.target.value)}
+              aria-label="Target date"
+            />
+          </label>
+          <Button
+            type="submit"
+            disabled={busy || !name || !targetAmount}
+            className="self-end"
+          >
             Add goal
           </Button>
         </form>

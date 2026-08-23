@@ -7,7 +7,9 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
   Legend,
+  Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -40,9 +42,9 @@ type ChartProps = {
 };
 
 const COLORS = {
-  spend: "#d4655a",
+  spend: "#7a9a6a",
   fixed: "#5c6b46",
-  discretionary: "#d4655a",
+  discretionary: "#6eb5a8",
   reserve: "#d4a857",
   income: "#7ec07a",
   savingsPos: "#7ec07a",
@@ -138,36 +140,22 @@ export function SpendIncomeChart({
     );
   }
 
+  const lastKey = data[data.length - 1]?.key;
+  function barOpacity(key: string) {
+    if (key === selectedKey) return 1;
+    if (key === lastKey) return 0.55;
+    return 1;
+  }
+
   return (
-    <div className={`h-72 w-full ${onSelectPeriod ? "cursor-pointer" : ""}`}>
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart
-          data={data}
-          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-          onClick={(state) => handleChartClick(state, data, onSelectPeriod)}
-        >
-          <defs>
-            <linearGradient id="incomeFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={COLORS.income} stopOpacity={0.28} />
-              <stop offset="100%" stopColor={COLORS.income} stopOpacity={0.02} />
-            </linearGradient>
-            <linearGradient id="spendFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={COLORS.spend} stopOpacity={0.22} />
-              <stop offset="100%" stopColor={COLORS.spend} stopOpacity={0.02} />
-            </linearGradient>
-            <linearGradient id="fixedFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={COLORS.fixed} stopOpacity={0.35} />
-              <stop offset="100%" stopColor={COLORS.fixed} stopOpacity={0.06} />
-            </linearGradient>
-            <linearGradient id="discFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={COLORS.discretionary} stopOpacity={0.28} />
-              <stop offset="100%" stopColor={COLORS.discretionary} stopOpacity={0.04} />
-            </linearGradient>
-            <linearGradient id="reserveFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={COLORS.reserve} stopOpacity={0.3} />
-              <stop offset="100%" stopColor={COLORS.reserve} stopOpacity={0.04} />
-            </linearGradient>
-          </defs>
+    <div>
+      <div className={`h-72 w-full ${onSelectPeriod ? "cursor-pointer" : ""}`}>
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart
+            data={data}
+            margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+            onClick={(state) => handleChartClick(state, data, onSelectPeriod)}
+          >
           <CartesianGrid stroke={COLORS.grid} strokeDasharray="3 3" vertical={false} />
           <XAxis
             dataKey="label"
@@ -188,66 +176,99 @@ export function SpendIncomeChart({
           <Legend
             wrapperStyle={{ fontSize: 12, color: COLORS.muted, paddingTop: 8 }}
           />
-          <Area
+          {useSplit ? (
+            <>
+              <Bar
+                dataKey="fixedSpend"
+                name="Committed"
+                stackId="spend"
+                maxBarSize={36}
+                fill={COLORS.fixed}
+              >
+                {data.map((entry) => (
+                  <Cell
+                    key={`fixed-${entry.key}`}
+                    fill={COLORS.fixed}
+                    fillOpacity={barOpacity(entry.key)}
+                    stroke={entry.key === selectedKey ? "#e8f0e4" : undefined}
+                    strokeWidth={entry.key === selectedKey ? 1.5 : 0}
+                    cursor="pointer"
+                  />
+                ))}
+              </Bar>
+              <Bar
+                dataKey="reserveSpend"
+                name="Reserves"
+                stackId="spend"
+                maxBarSize={36}
+                fill={COLORS.reserve}
+              >
+                {data.map((entry) => (
+                  <Cell
+                    key={`reserve-${entry.key}`}
+                    fill={COLORS.reserve}
+                    fillOpacity={barOpacity(entry.key)}
+                    stroke={entry.key === selectedKey ? "#e8f0e4" : undefined}
+                    strokeWidth={entry.key === selectedKey ? 1.5 : 0}
+                    cursor="pointer"
+                  />
+                ))}
+              </Bar>
+              <Bar
+                dataKey="discretionarySpend"
+                name="Flexible"
+                stackId="spend"
+                maxBarSize={36}
+                fill={COLORS.discretionary}
+                radius={[4, 4, 0, 0]}
+              >
+                {data.map((entry) => (
+                  <Cell
+                    key={`flex-${entry.key}`}
+                    fill={COLORS.discretionary}
+                    fillOpacity={barOpacity(entry.key)}
+                    stroke={entry.key === selectedKey ? "#e8f0e4" : undefined}
+                    strokeWidth={entry.key === selectedKey ? 1.5 : 0}
+                    cursor="pointer"
+                  />
+                ))}
+              </Bar>
+            </>
+          ) : (
+            <Bar
+              dataKey="spend"
+              name={spendLabel}
+              maxBarSize={36}
+              fill={COLORS.spend}
+              radius={[4, 4, 0, 0]}
+            >
+              {data.map((entry) => (
+                <Cell
+                  key={`spend-${entry.key}`}
+                  fill={COLORS.spend}
+                  fillOpacity={barOpacity(entry.key)}
+                  stroke={entry.key === selectedKey ? "#e8f0e4" : undefined}
+                  strokeWidth={entry.key === selectedKey ? 1.5 : 0}
+                  cursor="pointer"
+                />
+              ))}
+            </Bar>
+          )}
+          <Line
             type="monotone"
             dataKey="income"
             name={incomeLabel}
             stroke={COLORS.income}
-            fill="url(#incomeFill)"
             strokeWidth={2}
-            dot={false}
+            dot={{ r: 3, fill: COLORS.income, strokeWidth: 0 }}
             activeDot={{ r: 5, strokeWidth: 0 }}
           />
-          {useSplit ? (
-            <>
-              <Area
-                type="monotone"
-                dataKey="fixedSpend"
-                name="Committed"
-                stackId="spend"
-                stroke={COLORS.fixed}
-                fill="url(#fixedFill)"
-                strokeWidth={1.5}
-                dot={false}
-                activeDot={{ r: 4, strokeWidth: 0 }}
-              />
-              <Area
-                type="monotone"
-                dataKey="reserveSpend"
-                name="Reserves"
-                stackId="spend"
-                stroke={COLORS.reserve}
-                fill="url(#reserveFill)"
-                strokeWidth={1.5}
-                dot={false}
-                activeDot={{ r: 4, strokeWidth: 0 }}
-              />
-              <Area
-                type="monotone"
-                dataKey="discretionarySpend"
-                name="Flexible"
-                stackId="spend"
-                stroke={selectedKey ? COLORS.selected : COLORS.discretionary}
-                fill="url(#discFill)"
-                strokeWidth={2}
-                dot={false}
-                activeDot={{ r: 5, strokeWidth: 0 }}
-              />
-            </>
-          ) : (
-            <Area
-              type="monotone"
-              dataKey="spend"
-              name={spendLabel}
-              stroke={selectedKey ? COLORS.selected : COLORS.spend}
-              fill="url(#spendFill)"
-              strokeWidth={2}
-              dot={false}
-              activeDot={{ r: 5, strokeWidth: 0 }}
-            />
-          )}
-        </AreaChart>
+        </ComposedChart>
       </ResponsiveContainer>
+      </div>
+      <p className="text-center text-[11px] text-[var(--muted)]">
+        Faded bar is the current period (in progress).
+      </p>
     </div>
   );
 }

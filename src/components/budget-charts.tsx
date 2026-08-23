@@ -1,6 +1,18 @@
 "use client";
 
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { useMoneyFormat } from "@/components/privacy-context";
 
 export type CategorySlice = {
@@ -152,6 +164,172 @@ export function CategoryPieChart({
           </li>
         ) : null}
       </ul>
+    </div>
+  );
+}
+
+export type BudgetVarianceRow = {
+  id: string;
+  name: string;
+  budget: number;
+  spent: number;
+};
+
+const VARIANCE_OVER = "#d4655a";
+const VARIANCE_UNDER = "#7ec07a";
+const VARIANCE_GRID = "#2f5a3c";
+const VARIANCE_MUTED = "#8fb396";
+
+function sharePct(part: number, total: number) {
+  if (total <= 0) return 0;
+  return (part / total) * 100;
+}
+
+export function BudgetVarianceChart({
+  data,
+  emptyLabel = "Nothing to show yet",
+  onSelect,
+}: {
+  data: BudgetVarianceRow[];
+  emptyLabel?: string;
+  onSelect?: (row: BudgetVarianceRow) => void;
+}) {
+  const { formatCurrency } = useMoneyFormat();
+  const usable = data.filter((d) => d.budget > 0 || d.spent > 0);
+  const totalBudget = usable.reduce((sum, d) => sum + d.budget, 0);
+  const totalSpent = usable.reduce((sum, d) => sum + d.spent, 0);
+
+  if (usable.length === 0 || (totalBudget <= 0 && totalSpent <= 0)) {
+    return (
+      <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
+        {emptyLabel}
+      </p>
+    );
+  }
+
+  const ranked = [...usable].sort(
+    (a, b) => Math.max(b.budget, b.spent) - Math.max(a.budget, a.spent),
+  );
+  const top = ranked.slice(0, 6);
+  const rest = ranked.slice(6);
+  const rows: Array<
+    BudgetVarianceRow & {
+      budgetShare: number;
+      spendShare: number;
+      variancePp: number;
+    }
+  > = [];
+  for (const row of top) {
+    const budgetShare = sharePct(row.budget, totalBudget);
+    const spendShare = sharePct(row.spent, totalSpent);
+    rows.push({
+      ...row,
+      budgetShare,
+      spendShare,
+      variancePp: spendShare - budgetShare,
+    });
+  }
+  if (rest.length > 0) {
+    const budget = rest.reduce((sum, d) => sum + d.budget, 0);
+    const spent = rest.reduce((sum, d) => sum + d.spent, 0);
+    const budgetShare = sharePct(budget, totalBudget);
+    const spendShare = sharePct(spent, totalSpent);
+    rows.push({
+      id: "__other__",
+      name: "Other",
+      budget,
+      spent,
+      budgetShare,
+      spendShare,
+      variancePp: spendShare - budgetShare,
+    });
+  }
+
+  rows.sort((a, b) => Math.abs(b.variancePp) - Math.abs(a.variancePp));
+  const maxAbs = Math.max(4, ...rows.map((r) => Math.abs(r.variancePp)));
+  const interactive = Boolean(onSelect);
+  const chartHeight = Math.max(240, rows.length * 40 + 40);
+
+  return (
+    <div className="w-full" style={{ height: chartHeight }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart
+          data={rows}
+          layout="vertical"
+          margin={{ top: 4, right: 16, left: 4, bottom: 4 }}
+        >
+          <CartesianGrid
+            stroke={VARIANCE_GRID}
+            strokeDasharray="3 3"
+            horizontal={false}
+          />
+          <XAxis
+            type="number"
+            domain={[-maxAbs, maxAbs]}
+            tick={{ fill: VARIANCE_MUTED, fontSize: 11 }}
+            tickLine={false}
+            axisLine={{ stroke: VARIANCE_GRID }}
+            tickFormatter={(v: number) => `${v > 0 ? "+" : ""}${v.toFixed(0)} pp`}
+          />
+          <YAxis
+            type="category"
+            dataKey="name"
+            width={108}
+            tick={{ fill: VARIANCE_MUTED, fontSize: 11 }}
+            tickLine={false}
+            axisLine={false}
+          />
+          <ReferenceLine x={0} stroke={VARIANCE_MUTED} strokeOpacity={0.45} />
+          <Tooltip
+            cursor={{ fill: "rgba(238, 245, 234, 0.04)" }}
+            content={({ active, payload }) => {
+              if (!active || !payload?.length) return null;
+              const row = payload[0].payload as (typeof rows)[number];
+              const sign = row.variancePp > 0 ? "+" : "";
+              return (
+                <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm shadow-sm">
+                  <p className="font-medium">{row.name}</p>
+                  <p className="tabular-nums text-[var(--muted)]">
+                    Budget {formatCurrency(row.budget)} · {row.budgetShare.toFixed(0)}%
+                  </p>
+                  <p className="tabular-nums text-[var(--muted)]">
+                    Spent {formatCurrency(row.spent)} · {row.spendShare.toFixed(0)}%
+                  </p>
+                  <p
+                    className="tabular-nums"
+                    style={{
+                      color: row.variancePp > 0 ? VARIANCE_OVER : VARIANCE_UNDER,
+                    }}
+                  >
+                    {sign}
+                    {row.variancePp.toFixed(1)} pp vs budget share
+                  </p>
+                </div>
+              );
+            }}
+          />
+          <Bar
+            dataKey="variancePp"
+            name="Spend share − budget share"
+            maxBarSize={18}
+            cursor={interactive ? "pointer" : undefined}
+            onClick={(entry) => {
+              if (!onSelect) return;
+              const row = (entry as { payload?: BudgetVarianceRow }).payload;
+              if (!row || row.id === "__other__") return;
+              onSelect(row);
+            }}
+          >
+            {rows.map((row) => (
+              <Cell
+                key={row.id}
+                fill={row.variancePp > 0 ? VARIANCE_OVER : VARIANCE_UNDER}
+                cursor={interactive && row.id !== "__other__" ? "pointer" : undefined}
+              />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
     </div>
   );
 }

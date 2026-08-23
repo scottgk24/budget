@@ -1,3 +1,4 @@
+import { formatMonthLabel } from "@/lib/format";
 import type { Ledger } from "@/lib/types";
 
 export type LedgerCopy = {
@@ -53,7 +54,7 @@ const personal: LedgerCopy = {
   emptyAccountsTitle: "Connect an account",
   emptyAccountsDescription: "Link a bank through Plaid to get started.",
   budgetsTitle: "Budgets",
-  budgetsDescription: (month) => `Personal · ${month}`,
+  budgetsDescription: (month) => `Personal · ${formatMonthLabel(month)}`,
   totalBudgeted: "Budgeted",
   remaining: "Remaining",
   budgetMix: "Budget mix",
@@ -85,7 +86,7 @@ const business: LedgerCopy = {
   emptyAccountsTitle: "Connect an account",
   emptyAccountsDescription: "Link a bank through Plaid to get started.",
   budgetsTitle: "Expense limits",
-  budgetsDescription: (month) => `Business · ${month}`,
+  budgetsDescription: (month) => `Business · ${formatMonthLabel(month)}`,
   totalBudgeted: "Limited",
   remaining: "Remaining",
   budgetMix: "Limit mix",

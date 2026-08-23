@@ -165,7 +165,11 @@ export default function ReportsPage() {
         <>
           <div
             className={`grid gap-4 sm:grid-cols-2 ${
-              ledger === "personal" ? "lg:grid-cols-5" : "lg:grid-cols-4"
+              ledger === "personal" && view.totals.reserve != null
+                ? "lg:grid-cols-3 xl:grid-cols-6"
+                : ledger === "personal"
+                  ? "lg:grid-cols-5"
+                  : "lg:grid-cols-4"
             }`}
           >
             <Card>
@@ -178,7 +182,7 @@ export default function ReportsPage() {
               <>
                 <Card>
                   <p className="text-sm text-[var(--muted)]">Flexible</p>
-                  <p className="mt-2 font-display text-2xl text-[var(--danger)]">
+                  <p className="mt-2 font-display text-2xl text-[var(--flexible)]">
                     {formatCurrency(view.totals.discretionary)}
                   </p>
                   {view.totals.discretionaryShare != null ? (
@@ -193,6 +197,14 @@ export default function ReportsPage() {
                     {formatCurrency(view.totals.fixed)}
                   </p>
                 </Card>
+                {view.totals.reserve != null ? (
+                  <Card>
+                    <p className="text-sm text-[var(--muted)]">Reserves</p>
+                    <p className="mt-2 font-display text-2xl">
+                      {formatCurrency(view.totals.reserve)}
+                    </p>
+                  </Card>
+                ) : null}
               </>
             ) : (
               <Card>
@@ -357,7 +369,7 @@ export default function ReportsPage() {
               <h2 className="mb-1 font-display text-lg">Top merchants</h2>
               <p className="mb-4 text-sm text-[var(--muted)]">
                 {ledger === "personal"
-                  ? "Coral = flexible · olive = committed · gold = reserves"
+                  ? "Teal = flexible · olive = committed · gold = reserves"
                   : "Where the money actually went"}
               </p>
               {loading ? chartFallback : (

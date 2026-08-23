@@ -50,7 +50,6 @@ export function aggregateMerchants(
 ): MerchantRollup[] {
   const merchantMap = new Map<string, MerchantRollup>();
   for (const tx of txs) {
-    if (tx.amount <= 0) continue;
     const raw = tx.merchantName || tx.name;
     const key = merchantRuleKey(raw) || raw.trim().toLowerCase().slice(0, 40);
     if (!key) continue;
@@ -331,7 +330,6 @@ export async function buildSpendPace(params: {
       pending: false,
       date: { gte: start, lte: end },
       ...excludeNonSpendCategory,
-      amount: { gt: 0 },
     },
     select: {
       amount: true,
@@ -344,6 +342,7 @@ export async function buildSpendPace(params: {
 
   const spendByDay = new Map<string, number>();
   for (const tx of txs) {
+    if (!isSpendAmount(tx.amount, tx.category?.name)) continue;
     if (fundKind !== "all" && ledger === "personal") {
       const kind =
         (tx.fund?.kind as "committed" | "flexible" | "reserve" | "buffer" | undefined) ??
@@ -442,7 +441,7 @@ export async function buildReports(params: {
   for (const m of months) byMonthCat.set(m, new Map());
 
   for (const tx of txs) {
-    if (!isSpendAmount(tx.amount, tx.category?.name) || tx.amount <= 0) continue;
+    if (!isSpendAmount(tx.amount, tx.category?.name)) continue;
     const name = tx.category?.name ?? "Uncategorized";
     const m = monthKey(tx.date);
     const monthMap = byMonthCat.get(m);
@@ -492,7 +491,7 @@ export async function buildReports(params: {
   // --- Merchants ---
   const merchants = aggregateMerchants(
     txs
-      .filter((tx) => isSpendAmount(tx.amount, tx.category?.name) && tx.amount > 0)
+      .filter((tx) => isSpendAmount(tx.amount, tx.category?.name))
       .map((tx) => ({
         amount: tx.amount,
         name: tx.name,
@@ -510,7 +509,7 @@ export async function buildReports(params: {
       incomeTotal += Math.abs(tx.amount);
       continue;
     }
-    if (!isSpendAmount(tx.amount, tx.category?.name) || tx.amount <= 0) continue;
+    if (!isSpendAmount(tx.amount, tx.category?.name)) continue;
     const name = tx.category?.name ?? "Uncategorized";
     spendByCat.set(name, (spendByCat.get(name) ?? 0) + tx.amount);
   }

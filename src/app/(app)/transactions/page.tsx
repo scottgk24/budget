@@ -19,7 +19,13 @@ import {
   toDateParam,
   type MetricsRangeId,
 } from "@/lib/format";
-import { merchantRuleKey, OTHER_CATEGORY, REVIEW_CATEGORY } from "@/lib/categories";
+import {
+  INCOME_CATEGORY,
+  merchantRuleKey,
+  OTHER_CATEGORY,
+  REVIEW_CATEGORY,
+  TRANSFER_CATEGORY,
+} from "@/lib/categories";
 
 type Category = { id: string; name: string; ledger: string };
 type Account = { id: string; name: string; mask: string | null };
@@ -469,20 +475,26 @@ function TransactionsPageInner() {
                     </td>
                     {ledger === "personal" ? (
                       <td className="px-4 py-3">
-                        <Select
-                          value={tx.fundId ?? ""}
-                          onChange={(e) =>
-                            void updateTx(tx.id, { fundId: e.target.value || null })
-                          }
-                        >
-                          {funds
-                            .filter((f) => f.kind !== "buffer")
-                            .map((f) => (
-                              <option key={f.id} value={f.id}>
-                                {f.name}
-                              </option>
-                            ))}
-                        </Select>
+                        {tx.category?.name === INCOME_CATEGORY ||
+                        tx.category?.name === TRANSFER_CATEGORY ? (
+                          <span className="text-[var(--muted)]">—</span>
+                        ) : (
+                          <Select
+                            value={tx.fundId ?? ""}
+                            onChange={(e) =>
+                              void updateTx(tx.id, { fundId: e.target.value || null })
+                            }
+                            aria-label="Fund"
+                          >
+                            {funds
+                              .filter((f) => f.kind !== "buffer")
+                              .map((f) => (
+                                <option key={f.id} value={f.id}>
+                                  {f.name}
+                                </option>
+                              ))}
+                          </Select>
+                        )}
                       </td>
                     ) : null}
                     <td className="px-4 py-3">

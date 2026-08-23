@@ -13,7 +13,7 @@ type MerchantRow = {
 function barColor(categoryName: string | null | undefined, colorByFlexibility: boolean): string {
   if (!colorByFlexibility || !categoryName) return "bg-[var(--gold)]";
   const kind = fundKindForSlug(defaultFundSlugForCategoryName(categoryName));
-  if (kind === "flexible") return "bg-[var(--danger)]";
+  if (kind === "flexible") return "bg-[var(--flexible)]";
   if (kind === "committed") return "bg-[var(--olive)]";
   return "bg-[var(--gold)]";
 }

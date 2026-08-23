@@ -20,10 +20,10 @@ import {
 } from "@/lib/format";
 import { ledgerCopy } from "@/lib/ledger-copy";
 import { getDate, getDayOfYear, getDaysInMonth, getDaysInYear } from "date-fns";
-import type { CategorySlice } from "@/components/budget-charts";
+import type { BudgetVarianceRow } from "@/components/budget-charts";
 
-const CategoryPieChart = dynamic(
-  () => import("@/components/budget-charts").then((m) => m.CategoryPieChart),
+const BudgetVarianceChart = dynamic(
+  () => import("@/components/budget-charts").then((m) => m.BudgetVarianceChart),
   {
     ssr: false,
     loading: () => (
@@ -369,10 +369,23 @@ export default function BudgetsPage() {
     (fundPlan?.carriedOverspend ?? 0) -
     (fundPlan?.flexibleSpent ?? 0);
 
+  const rowIds = useMemo(() => new Set(rows.map((c) => c.id)), [rows]);
+
+  /** Review, uncategorized, and any other spend not shown as a budget row. */
+  const unbudgetedSpent = useMemo(() => {
+    let sum = 0;
+    for (const [id, amount] of Object.entries(spentByCategory)) {
+      if (id === "uncategorized" || !rowIds.has(id)) sum += amount;
+    }
+    return sum;
+  }, [spentByCategory, rowIds]);
+
   /** Cash that actually left accounts this month (can spike on annual bills). */
   const cashSpentThisMonth = useMemo(
-    () => rows.reduce((sum, c) => sum + (spentByCategory[c.id] ?? 0), 0),
-    [rows, spentByCategory],
+    () =>
+      rows.reduce((sum, c) => sum + (spentByCategory[c.id] ?? 0), 0) +
+      unbudgetedSpent,
+    [rows, spentByCategory, unbudgetedSpent],
   );
 
   /**
@@ -386,13 +399,13 @@ export default function BudgetsPage() {
           return sum + monthlyAllotment(spentYtdByCategory[c.id] ?? 0);
         }
         return sum + (spentByCategory[c.id] ?? 0);
-      }, 0),
-    [rows, spentByCategory, spentYtdByCategory],
+      }, 0) + unbudgetedSpent,
+    [rows, spentByCategory, spentYtdByCategory, unbudgetedSpent],
   );
 
   const cashDiffersFromMonthly = Math.abs(cashSpentThisMonth - totalSpent) >= 1;
 
-  const budgetSlices = useMemo(
+  const varianceRows = useMemo(
     () =>
       rows
         .map((c) => {
@@ -400,24 +413,14 @@ export default function BudgetsPage() {
           return {
             id: c.id,
             name: c.name,
-            value: isAnnual(c) ? monthlyAllotment(amt) : amt,
+            budget: isAnnual(c) ? monthlyAllotment(amt) : amt,
+            spent: isAnnual(c)
+              ? monthlyAllotment(spentYtdByCategory[c.id] ?? 0)
+              : (spentByCategory[c.id] ?? 0),
           };
         })
-        .filter((s) => s.value > 0),
-    [rows, drafts],
-  );
-  const spendSlices = useMemo(
-    () =>
-      rows
-        .map((c) => ({
-          id: c.id,
-          name: c.name,
-          value: isAnnual(c)
-            ? monthlyAllotment(spentYtdByCategory[c.id] ?? 0)
-            : (spentByCategory[c.id] ?? 0),
-        }))
-        .filter((s) => s.value > 0),
-    [rows, spentByCategory, spentYtdByCategory],
+        .filter((s) => s.budget > 0 || s.spent > 0),
+    [rows, drafts, spentByCategory, spentYtdByCategory],
   );
 
   const allExpanded = rows.length > 0 && rows.every((c) => expanded.has(c.id));
@@ -679,6 +682,12 @@ export default function BudgetsPage() {
                   <span className="text-[var(--muted)]/80"> · annual smoothed</span>
                 </p>
               ) : null}
+              {unbudgetedSpent >= 1 ? (
+                <p className="mt-1 text-xs text-[var(--muted)]">
+                  Includes {formatCurrency(unbudgetedSpent)} unbudgeted
+                  (Review / uncategorized)
+                </p>
+              ) : null}
             </Card>
             <Card>
               <p className="text-sm text-[var(--muted)]">{copy.remaining}</p>
@@ -693,50 +702,39 @@ export default function BudgetsPage() {
                   ? formatCurrency(totalBudgeted - totalSpent)
                   : "—"}
               </p>
-              {cashDiffersFromMonthly ? (
-                <p className="mt-1 text-xs text-[var(--muted)]">
-                  vs monthly view
-                </p>
-              ) : null}
+              <p className="mt-1 text-xs text-[var(--muted)]">
+                Budget minus spend (monthly view)
+              </p>
             </Card>
           </div>
 
-          <div className="mb-6 grid gap-4 lg:grid-cols-2">
-            <Card>
-              <h2 className="mb-3 font-display text-lg">
-                {copy.budgetMix}
-              </h2>
-              <CategoryPieChart
-                data={budgetSlices}
-                emptyLabel="Nothing here yet"
-              />
-            </Card>
-            <Card>
-              <h2 className="mb-3 font-display text-lg">
-                {copy.spendMix}
-              </h2>
-              {cashDiffersFromMonthly ? (
-                <p className="mb-2 text-xs text-[var(--muted)]">
-                  Annual categories use YTD ÷ 12
-                </p>
-              ) : null}
-              <CategoryPieChart
-                data={spendSlices}
-                emptyLabel="Nothing here yet"
-                onSelectSlice={(slice: CategorySlice) => {
-                  const { start, end } = monthRange(month);
-                  setBreakdown({
-                    type: "transactions",
-                    title: slice.name,
-                    subtitle: formatMonthLabel(month),
-                    from: toDateParam(start),
-                    to: toDateParam(end),
-                    categoryId: slice.id,
-                  });
-                }}
-              />
-            </Card>
-          </div>
+          <Card className="mb-6">
+            <h2 className="mb-1 font-display text-lg">Spend vs budget share</h2>
+            <p className="mb-3 text-xs text-[var(--muted)]">
+              Percentage-point gap between each category’s share of spend and
+              share of budget. Over-spent mix is coral; under is green.
+            </p>
+            {cashDiffersFromMonthly ? (
+              <p className="mb-2 text-xs text-[var(--muted)]">
+                Annual categories use YTD ÷ 12
+              </p>
+            ) : null}
+            <BudgetVarianceChart
+              data={varianceRows}
+              emptyLabel="Nothing here yet"
+              onSelect={(row: BudgetVarianceRow) => {
+                const { start, end } = monthRange(month);
+                setBreakdown({
+                  type: "transactions",
+                  title: row.name,
+                  subtitle: formatMonthLabel(month),
+                  from: toDateParam(start),
+                  to: toDateParam(end),
+                  categoryId: row.id,
+                });
+              }}
+            />
+          </Card>
 
           <BreakdownModal
             open={breakdown != null}
@@ -785,12 +783,26 @@ export default function BudgetsPage() {
                           {group.fund.name}
                         </p>
                         {group.fund.kind === "reserve" && fundPlan ? (
-                          <p className="text-[11px] tabular-nums text-[var(--muted)]">
-                            Balance{" "}
-                            {formatCurrency(
-                              fundPlan.funds.find((f) => f.id === group.fund!.id)?.closing ?? 0,
-                            )}
-                          </p>
+                          (() => {
+                            const planFund = fundPlan.funds.find(
+                              (f) => f.id === group.fund!.id,
+                            );
+                            const closing = planFund?.closing ?? 0;
+                            const contribution =
+                              planFund?.contribution ?? group.fund.monthlyContribution;
+                            return (
+                              <p
+                                className={`text-[11px] tabular-nums ${
+                                  closing < 0
+                                    ? "text-[var(--danger)]"
+                                    : "text-[var(--muted)]"
+                                }`}
+                              >
+                                Balance {formatCurrency(closing)} · contributing{" "}
+                                {formatCurrency(contribution)}/mo
+                              </p>
+                            );
+                          })()
                         ) : group.fund.slug === "flexible" && fundPlan ? (
                           <p className="text-[11px] tabular-nums text-[var(--muted)]">
                             Assigned {formatCurrency(fundPlan.flexibleAssigned)} after bills and

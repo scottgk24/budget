@@ -6,6 +6,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   Legend,
   Line,
   LineChart,
@@ -18,6 +19,7 @@ import {
 } from "recharts";
 import { useMoneyFormat } from "@/components/privacy-context";
 import type { SpendPacePoint } from "@/lib/report-types";
+import { format, parseISO } from "date-fns";
 
 export type { SpendPacePoint };
 
@@ -31,14 +33,14 @@ const COLORS = {
   sankeyNode: "#2c5f2b",
   sankeySavings: "#d4a857",
   sankeyFixed: "#5c6b46",
-  sankeyDiscretionary: "#d4655a",
+  sankeyDiscretionary: "#6eb5a8",
   sankeyReserve: "#d4a857",
   sankeyLinkReserve: "#d4a857",
   sankeyLink: "#5c6b46",
   sankeyLinkSavings: "#d4a857",
-  sankeyLinkDiscretionary: "#d4655a",
+  sankeyLinkDiscretionary: "#6eb5a8",
   fixed: "#5c6b46",
-  discretionary: "#d4655a",
+  discretionary: "#6eb5a8",
 };
 
 /** Thin vertical guide instead of Recharts' default full-height hover rectangle. */
@@ -256,7 +258,20 @@ export function CategoryTrendsChart({
                 if (!month) return;
                 onSelect({ monthKey: month, categoryName: key, label });
               }}
-            />
+            >
+              {data.map((row, idx) => (
+                <Cell
+                  key={`${key}-${typeof row.key === "string" ? row.key : idx}`}
+                  fillOpacity={
+                    idx === data.length - 1 &&
+                    typeof row.key === "string" &&
+                    row.key === format(new Date(), "yyyy-MM")
+                      ? 0.55
+                      : 1
+                  }
+                />
+              ))}
+            </Bar>
           ))}
         </BarChart>
       </ResponsiveContainer>
@@ -472,7 +487,19 @@ export function FlexibilityTrendsChart({
                 });
               }
             }}
-          />
+          >
+            {data.map((row) => (
+              <Cell
+                key={`committed-${row.key}`}
+                fillOpacity={
+                  row.key === data[data.length - 1]?.key &&
+                  row.key === format(new Date(), "yyyy-MM")
+                    ? 0.55
+                    : 1
+                }
+              />
+            ))}
+          </Bar>
           <Bar
             dataKey="Reserves"
             name="Reserves"
@@ -494,7 +521,19 @@ export function FlexibilityTrendsChart({
                 });
               }
             }}
-          />
+          >
+            {data.map((row) => (
+              <Cell
+                key={`reserves-${row.key}`}
+                fillOpacity={
+                  row.key === data[data.length - 1]?.key &&
+                  row.key === format(new Date(), "yyyy-MM")
+                    ? 0.55
+                    : 1
+                }
+              />
+            ))}
+          </Bar>
           <Bar
             dataKey="Flexible"
             name="Flexible"
@@ -517,7 +556,19 @@ export function FlexibilityTrendsChart({
                 });
               }
             }}
-          />
+          >
+            {data.map((row) => (
+              <Cell
+                key={`flexible-${row.key}`}
+                fillOpacity={
+                  row.key === data[data.length - 1]?.key &&
+                  row.key === format(new Date(), "yyyy-MM")
+                    ? 0.55
+                    : 1
+                }
+              />
+            ))}
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -539,7 +590,7 @@ export function AgeOfMoneyChart({
 
   const data = series.map((p) => ({
     ...p,
-    label: p.date.slice(5),
+    label: format(parseISO(p.date), "MMM d"),
   }));
 
   return (

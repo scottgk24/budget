@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { startOfMonth, subMonths } from "date-fns";
+import { endOfMonth, startOfMonth, subMonths } from "date-fns";
 import {
   AuthError,
   ensureMissingDefaultCategories,
@@ -72,8 +72,10 @@ export async function GET(req: Request) {
 
     const { start, end } = monthRange(month);
     const { start: yearStart, end: yearEnd } = yearRange(year);
+    const histStart = startOfMonth(subMonths(startOfMonth(start), AVG_MONTHS));
+    const histEnd = endOfMonth(subMonths(startOfMonth(start), 1));
 
-    const [spent, spentYtd, historical] = await Promise.all([
+    const [spent, spentYtd, historicalTxs] = await Promise.all([
       prisma.transaction.groupBy({
         by: ["categoryId"],
         where: {
@@ -96,19 +98,15 @@ export async function GET(req: Request) {
         },
         _sum: { amount: true },
       }),
-      prisma.transaction.groupBy({
-        by: ["categoryId"],
+      prisma.transaction.findMany({
         where: {
           workspaceId: workspace.id,
           ledger,
-          date: {
-            gte: startOfMonth(subMonths(startOfMonth(start), AVG_MONTHS - 1)),
-            lte: end,
-          },
+          date: { gte: histStart, lte: histEnd },
           pending: false,
           ...excludeNonSpendCategory,
         },
-        _sum: { amount: true },
+        select: { date: true, categoryId: true, amount: true },
       }),
     ]);
 
@@ -118,11 +116,26 @@ export async function GET(req: Request) {
     const spentYtdByCategory = Object.fromEntries(
       spentYtd.map((s) => [s.categoryId ?? "uncategorized", s._sum.amount ?? 0]),
     );
+
+    const histSum = new Map<string, number>();
+    const histMonths = new Map<string, Set<string>>();
+    for (const tx of historicalTxs) {
+      const cat = tx.categoryId ?? "uncategorized";
+      histSum.set(cat, (histSum.get(cat) ?? 0) + tx.amount);
+      let months = histMonths.get(cat);
+      if (!months) {
+        months = new Set();
+        histMonths.set(cat, months);
+      }
+      months.add(monthKey(tx.date));
+    }
+    let maxDivisor = 0;
     const averageByCategory = Object.fromEntries(
-      historical.map((s) => [
-        s.categoryId ?? "uncategorized",
-        Math.round(((s._sum.amount ?? 0) / AVG_MONTHS) * 100) / 100,
-      ]),
+      [...histSum.entries()].map(([cat, sum]) => {
+        const divisor = Math.max(1, histMonths.get(cat)?.size ?? 1);
+        maxDivisor = Math.max(maxDivisor, divisor);
+        return [cat, Math.round((sum / divisor) * 100) / 100];
+      }),
     );
 
     const fundPlan =
@@ -143,7 +156,7 @@ export async function GET(req: Request) {
       spentByCategory,
       spentYtdByCategory,
       averageByCategory,
-      averageMonths: AVG_MONTHS,
+      averageMonths: maxDivisor || AVG_MONTHS,
       month,
       year,
       funds,
