@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useLedgerGuard } from "@/components/ledger-context";
@@ -13,6 +13,10 @@ import { useAppBasePath } from "@/components/use-app-base-path";
 import { MerchantList } from "@/components/merchant-list";
 import { PageSkeleton } from "@/components/page-skeleton";
 import { Card, PageHeader, Select } from "@/components/ui";
+import {
+  isFlexibleCategoryName,
+  type CategoryMonthSeriesRegistry,
+} from "@/lib/category-month-series";
 import {
   METRICS_RANGES,
   formatMonthLabel,
@@ -33,6 +37,11 @@ const CategoryTrendsChart = dynamic(
   () => import("@/components/report-charts").then((m) => m.CategoryTrendsChart),
   { ssr: false, loading: () => chartFallback },
 );
+const CategorySpendVsBudgetChart = dynamic(
+  () =>
+    import("@/components/report-charts").then((m) => m.CategorySpendVsBudgetChart),
+  { ssr: false, loading: () => chartFallback },
+);
 const CashFlowSankey = dynamic(
   () => import("@/components/report-charts").then((m) => m.CashFlowSankey),
   { ssr: false, loading: () => chartFallback },
@@ -47,6 +56,8 @@ const AgeOfMoneyChart = dynamic(
   { ssr: false, loading: () => chartFallback },
 );
 
+const CATEGORY_PICKER_SKIP = new Set(["Income", "Transfers", "Review"]);
+
 type ReportsData = {
   start: string;
   end: string;
@@ -60,6 +71,7 @@ type ReportsData = {
     reserve?: number;
     discretionaryShare: number | null;
   };
+  categorySeries: CategoryMonthSeriesRegistry;
   categoryTrends: {
     months: Array<Record<string, string | number>>;
     keys: string[];
@@ -101,6 +113,7 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [breakdown, setBreakdown] = useState<BreakdownTarget | null>(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const requested = ledger;
@@ -127,6 +140,7 @@ export default function ReportsPage() {
 
   useEffect(() => {
     setBreakdown(null);
+    setSelectedCategoryId(null);
   }, [ledger, rangeId]);
 
   const view = dataLedger === ledger ? data : null;
@@ -134,6 +148,41 @@ export default function ReportsPage() {
   const rangeTo = view ? toDateParam(new Date(view.end)) : null;
   const rangeLabel =
     METRICS_RANGES.find((r) => r.id === rangeId)?.label ?? "Selected range";
+
+  const categoryOptions = useMemo(() => {
+    if (!view?.categorySeries) return [];
+    return Object.values(view.categorySeries.byCategoryId)
+      .filter((s) => !CATEGORY_PICKER_SKIP.has(s.name))
+      .filter((s) => {
+        const hasSpend = s.points.some((p) => p.spent !== 0);
+        const hasBudget = s.points.some((p) => p.budget > 0);
+        return hasSpend || hasBudget;
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [view]);
+
+  const defaultCategoryId = useMemo(() => {
+    if (categoryOptions.length === 0) return null;
+    const flexible = categoryOptions
+      .filter((s) => isFlexibleCategoryName(s.name))
+      .map((s) => ({
+        id: s.categoryId,
+        total: s.points.reduce((sum, p) => sum + p.spent, 0),
+      }))
+      .sort((a, b) => b.total - a.total);
+    return flexible[0]?.id ?? categoryOptions[0]!.categoryId;
+  }, [categoryOptions]);
+
+  const activeCategoryId =
+    selectedCategoryId != null &&
+    categoryOptions.some((s) => s.categoryId === selectedCategoryId)
+      ? selectedCategoryId
+      : defaultCategoryId;
+
+  const selectedSeries =
+    activeCategoryId && view?.categorySeries
+      ? view.categorySeries.byCategoryId[activeCategoryId]
+      : undefined;
 
   return (
     <div>
@@ -324,6 +373,52 @@ export default function ReportsPage() {
           ) : null}
 
           <Card className="mt-6">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="mb-1 font-display text-lg">Category over time</h2>
+                <p className="text-sm text-[var(--muted)]">
+                  Spend vs budget for one category
+                </p>
+              </div>
+              {categoryOptions.length > 0 ? (
+                <Select
+                  aria-label="Category"
+                  value={activeCategoryId ?? ""}
+                  onChange={(e) => setSelectedCategoryId(e.target.value || null)}
+                >
+                  {categoryOptions.map((s) => (
+                    <option key={s.categoryId} value={s.categoryId}>
+                      {s.name}
+                    </option>
+                  ))}
+                </Select>
+              ) : null}
+            </div>
+            {loading ? (
+              chartFallback
+            ) : selectedSeries ? (
+              <CategorySpendVsBudgetChart
+                series={selectedSeries}
+                onSelect={({ month, categoryId, name }) => {
+                  const { start, end } = monthRange(month);
+                  setBreakdown({
+                    type: "transactions",
+                    title: name,
+                    subtitle: formatMonthLabel(month),
+                    from: toDateParam(start),
+                    to: toDateParam(end),
+                    categoryId: categoryId === "uncategorized" ? null : categoryId,
+                  });
+                }}
+              />
+            ) : (
+              <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
+                No categories with spend or budget in this range.
+              </p>
+            )}
+          </Card>
+
+          <Card className="mt-6">
             <h2 className="mb-1 font-display text-lg">
               {kind === "personal"
                 ? "Flexible by category"
@@ -339,14 +434,14 @@ export default function ReportsPage() {
                 data={view.categoryTrends.months}
                 keys={view.categoryTrends.keys}
                 onSelect={({ monthKey, categoryName }) => {
-                  if (categoryName === "Other") {
+                  if (categoryName === "All other") {
                     setBreakdown({
                       type: "period",
                       periodKey: monthKey,
                       granularity: "monthly",
                       flexibility:
                         kind === "personal" ? "discretionary" : undefined,
-                      title: "Other",
+                      title: "All other",
                     });
                     return;
                   }

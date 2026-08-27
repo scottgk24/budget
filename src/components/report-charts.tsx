@@ -7,6 +7,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
   Legend,
   Line,
   LineChart,
@@ -18,6 +19,7 @@ import {
   YAxis,
 } from "recharts";
 import { useMoneyFormat } from "@/components/privacy-context";
+import type { CategoryMonthSeries } from "@/lib/category-month-series";
 import type { SpendPacePoint } from "@/lib/report-types";
 import { format, parseISO } from "date-fns";
 
@@ -274,6 +276,97 @@ export function CategoryTrendsChart({
             </Bar>
           ))}
         </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+export function CategorySpendVsBudgetChart({
+  series,
+  onSelect,
+}: {
+  series: CategoryMonthSeries;
+  onSelect?: (sel: { month: string; categoryId: string; name: string }) => void;
+}) {
+  const { formatCompactCurrency } = useMoneyFormat();
+  const data = series.points.map((p) => ({
+    key: p.month,
+    label: format(new Date(`${p.month}-01T12:00:00`), "MMM yy"),
+    spent: p.spent,
+    budget: p.budget,
+  }));
+  const hasData = data.some((d) => d.spent !== 0 || d.budget !== 0);
+  const currentMonth = format(new Date(), "yyyy-MM");
+
+  if (!hasData) {
+    return (
+      <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
+        No spend or budget for this category.
+      </p>
+    );
+  }
+
+  return (
+    <div className={`h-72 w-full ${onSelect ? "cursor-pointer" : ""}`}>
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          <CartesianGrid stroke={COLORS.grid} strokeDasharray="3 3" vertical={false} />
+          <XAxis
+            dataKey="label"
+            tick={{ fill: COLORS.muted, fontSize: 11 }}
+            tickLine={false}
+            axisLine={{ stroke: COLORS.grid }}
+          />
+          <YAxis
+            tick={{ fill: COLORS.muted, fontSize: 11 }}
+            tickLine={false}
+            axisLine={false}
+            tickFormatter={formatCompactCurrency}
+            width={48}
+          />
+          <Tooltip content={<MoneyTooltip />} cursor={false} />
+          <Legend
+            wrapperStyle={{ fontSize: 11, color: COLORS.muted, paddingTop: 8 }}
+          />
+          <Bar
+            dataKey="spent"
+            name="Spent"
+            fill={COLORS.spend}
+            maxBarSize={40}
+            radius={[4, 4, 0, 0]}
+            activeBar={{ stroke: "#e8f0e4", strokeWidth: 1, opacity: 1 }}
+            cursor={onSelect ? "pointer" : undefined}
+            onClick={(entry) => {
+              if (!onSelect) return;
+              const row = (
+                entry as { payload?: { key?: string } }
+              ).payload;
+              if (!row?.key) return;
+              onSelect({
+                month: row.key,
+                categoryId: series.categoryId,
+                name: series.name,
+              });
+            }}
+          >
+            {data.map((row) => (
+              <Cell
+                key={`spent-${row.key}`}
+                fillOpacity={row.key === currentMonth ? 0.55 : 1}
+              />
+            ))}
+          </Bar>
+          <Line
+            type="monotone"
+            dataKey="budget"
+            name="Budget"
+            stroke={COLORS.ideal}
+            strokeDasharray="6 4"
+            strokeWidth={2}
+            dot={false}
+            activeDot={{ r: 4, strokeWidth: 0 }}
+          />
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );

@@ -1,4 +1,5 @@
 import {
+  addMonths,
   format,
   parseISO,
   startOfMonth,
@@ -102,6 +103,18 @@ export function recentMonthKeys(count = 12, now: Date = new Date()): string[] {
 
 export function formatMonthLabel(month: string): string {
   return format(parseISO(`${month}-01`), "MMM yyyy");
+}
+
+/** Inclusive month keys from startOfMonth(start) through startOfMonth(end), oldest-first. */
+export function monthKeysInRange(start: Date, end: Date): string[] {
+  const months: string[] = [];
+  let c = startOfMonth(start);
+  const last = startOfMonth(end);
+  while (c <= last) {
+    months.push(monthKey(c));
+    c = addMonths(c, 1);
+  }
+  return months;
 }
 
 export function monthRange(month: string): { start: Date; end: Date } {

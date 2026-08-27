@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { endOfMonth, startOfMonth, subMonths } from "date-fns";
+import { startOfMonth, subMonths } from "date-fns";
 import {
   AuthError,
   ensureMissingDefaultCategories,
   ensureUserAndWorkspace,
 } from "@/lib/auth";
-import { excludeNonSpendCategory, isAnnualBudgetPeriod } from "@/lib/categories";
+import {
+  excludeNonSpendCategory,
+  isAnnualBudgetPeriod,
+} from "@/lib/categories";
+import { buildCategoryMonthSeries } from "@/lib/category-month-series";
 import { computeFundMonth, ensureDefaultFunds } from "@/lib/funds";
 import { prisma } from "@/lib/db";
 import { ledgerSlugSchema } from "@/lib/workspace-ledgers";
@@ -14,12 +18,14 @@ import { parseLedger } from "@/lib/ledger";
 import { isPersonalLedger } from "@/lib/workspace-ledgers";
 import {
   monthKey,
+  monthKeysInRange,
   monthRange,
   yearFromPeriod,
   yearRange,
 } from "@/lib/format";
 
 const AVG_MONTHS = 6;
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export async function GET(req: Request) {
   try {
@@ -47,72 +53,85 @@ export async function GET(req: Request) {
       .filter((c) => !isAnnualBudgetPeriod(c.budgetPeriod))
       .map((c) => c.id);
 
-    const [monthlyBudgets, annualBudgets] = await Promise.all([
-      monthlyIds.length
-        ? prisma.budget.findMany({
-            where: {
-              workspaceId: workspace.id,
-              ledger,
-              month,
-              categoryId: { in: monthlyIds },
-            },
-            include: { category: true },
-          })
-        : Promise.resolve([]),
-      annualIds.length
-        ? prisma.budget.findMany({
-            where: {
-              workspaceId: workspace.id,
-              ledger,
-              month: year,
-              categoryId: { in: annualIds },
-            },
-            include: { category: true },
-          })
-        : Promise.resolve([]),
-    ]);
-
-    const budgets = [...monthlyBudgets, ...annualBudgets];
-
     const { start, end } = monthRange(month);
     const { start: yearStart, end: yearEnd } = yearRange(year);
     const histStart = startOfMonth(subMonths(startOfMonth(start), AVG_MONTHS));
-    const histEnd = endOfMonth(subMonths(startOfMonth(start), 1));
+    const seriesMonths = monthKeysInRange(histStart, end);
+    const yearKeys = [...new Set(seriesMonths.map(yearFromPeriod))];
+    const budgetPeriodKeys = [...seriesMonths, ...yearKeys];
 
-    const [spent, spentYtd, historicalTxs] = await Promise.all([
-      prisma.transaction.groupBy({
-        by: ["categoryId"],
-        where: {
-          workspaceId: workspace.id,
-          ledger,
-          date: { gte: start, lte: end },
-          pending: false,
-          ...excludeNonSpendCategory,
-        },
-        _sum: { amount: true },
-      }),
-      prisma.transaction.groupBy({
-        by: ["categoryId"],
-        where: {
-          workspaceId: workspace.id,
-          ledger,
-          date: { gte: yearStart, lte: yearEnd },
-          pending: false,
-          ...excludeNonSpendCategory,
-        },
-        _sum: { amount: true },
-      }),
-      prisma.transaction.findMany({
-        where: {
-          workspaceId: workspace.id,
-          ledger,
-          date: { gte: histStart, lte: histEnd },
-          pending: false,
-          ...excludeNonSpendCategory,
-        },
-        select: { date: true, categoryId: true, amount: true },
-      }),
-    ]);
+    const [monthlyBudgets, annualBudgets, seriesBudgets, spent, spentYtd, seriesTxs] =
+      await Promise.all([
+        monthlyIds.length
+          ? prisma.budget.findMany({
+              where: {
+                workspaceId: workspace.id,
+                ledger,
+                month,
+                categoryId: { in: monthlyIds },
+              },
+              include: { category: true },
+            })
+          : Promise.resolve([]),
+        annualIds.length
+          ? prisma.budget.findMany({
+              where: {
+                workspaceId: workspace.id,
+                ledger,
+                month: year,
+                categoryId: { in: annualIds },
+              },
+              include: { category: true },
+            })
+          : Promise.resolve([]),
+        prisma.budget.findMany({
+          where: {
+            workspaceId: workspace.id,
+            ledger,
+            month: { in: budgetPeriodKeys },
+          },
+          select: { categoryId: true, month: true, amount: true },
+        }),
+        prisma.transaction.groupBy({
+          by: ["categoryId"],
+          where: {
+            workspaceId: workspace.id,
+            ledger,
+            date: { gte: start, lte: end },
+            pending: false,
+            ...excludeNonSpendCategory,
+          },
+          _sum: { amount: true },
+        }),
+        prisma.transaction.groupBy({
+          by: ["categoryId"],
+          where: {
+            workspaceId: workspace.id,
+            ledger,
+            date: { gte: yearStart, lte: yearEnd },
+            pending: false,
+            ...excludeNonSpendCategory,
+          },
+          _sum: { amount: true },
+        }),
+        prisma.transaction.findMany({
+          where: {
+            workspaceId: workspace.id,
+            ledger,
+            date: { gte: histStart, lte: end },
+            pending: false,
+            ...excludeNonSpendCategory,
+          },
+          select: {
+            date: true,
+            categoryId: true,
+            amount: true,
+            category: { select: { name: true } },
+          },
+        }),
+      ]);
+
+    const budgets = [...monthlyBudgets, ...annualBudgets];
 
     const spentByCategory = Object.fromEntries(
       spent.map((s) => [s.categoryId ?? "uncategorized", s._sum.amount ?? 0]),
@@ -121,24 +140,28 @@ export async function GET(req: Request) {
       spentYtd.map((s) => [s.categoryId ?? "uncategorized", s._sum.amount ?? 0]),
     );
 
-    const histSum = new Map<string, number>();
-    const histMonths = new Map<string, Set<string>>();
-    for (const tx of historicalTxs) {
-      const cat = tx.categoryId ?? "uncategorized";
-      histSum.set(cat, (histSum.get(cat) ?? 0) + tx.amount);
-      let months = histMonths.get(cat);
-      if (!months) {
-        months = new Set();
-        histMonths.set(cat, months);
-      }
-      months.add(monthKey(tx.date));
-    }
+    const categorySeries = buildCategoryMonthSeries({
+      months: seriesMonths,
+      categories,
+      transactions: seriesTxs.map((tx) => ({
+        date: tx.date,
+        amount: tx.amount,
+        categoryId: tx.categoryId,
+        categoryName: tx.category?.name ?? null,
+      })),
+      budgets: seriesBudgets,
+    });
+
     let maxDivisor = 0;
     const averageByCategory = Object.fromEntries(
-      [...histSum.entries()].map(([cat, sum]) => {
-        const divisor = Math.max(1, histMonths.get(cat)?.size ?? 1);
-        maxDivisor = Math.max(maxDivisor, divisor);
-        return [cat, Math.round((sum / divisor) * 100) / 100];
+      Object.values(categorySeries.byCategoryId).map((series) => {
+        const completed = series.points.filter(
+          (p) => p.month < month && p.spent !== 0,
+        );
+        maxDivisor = Math.max(maxDivisor, completed.length);
+        if (completed.length === 0) return [series.categoryId, 0];
+        const sum = completed.reduce((s, p) => s + p.spent, 0);
+        return [series.categoryId, round2(sum / completed.length)];
       }),
     );
 
@@ -161,6 +184,7 @@ export async function GET(req: Request) {
       spentYtdByCategory,
       averageByCategory,
       averageMonths: maxDivisor || AVG_MONTHS,
+      categorySeries,
       month,
       year,
       funds,

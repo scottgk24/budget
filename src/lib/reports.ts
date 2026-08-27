@@ -13,8 +13,17 @@ import {
   merchantRuleKey,
 } from "@/lib/categories";
 import { computeAgeOfMoney } from "@/lib/age-of-money";
+import {
+  buildCategoryMonthSeries,
+  toStackedSpendRows,
+} from "@/lib/category-month-series";
 import { prisma } from "@/lib/db";
-import { metricsRange, monthKey, type MetricsRangeId } from "@/lib/format";
+import {
+  metricsRange,
+  monthKeysInRange,
+  yearFromPeriod,
+  type MetricsRangeId,
+} from "@/lib/format";
 import type { SpendPacePoint } from "@/lib/report-types";
 import type { Ledger } from "@/lib/types";
 
@@ -412,81 +421,53 @@ export async function buildReports(params: {
   const { workspaceId, ledger, range } = params;
   const { start, end } = metricsRange(range);
 
-  const txs = await prisma.transaction.findMany({
-    where: {
-      workspaceId,
-      ledger,
-      pending: false,
-      date: { gte: start, lte: end },
-    },
-    include: { category: { select: { id: true, name: true } } },
-    orderBy: { date: "asc" },
+  const months = monthKeysInRange(start, end);
+  const yearKeys = [...new Set(months.map(yearFromPeriod))];
+
+  const [txs, categories, budgets] = await Promise.all([
+    prisma.transaction.findMany({
+      where: {
+        workspaceId,
+        ledger,
+        pending: false,
+        date: { gte: start, lte: end },
+      },
+      include: { category: { select: { id: true, name: true } } },
+      orderBy: { date: "asc" },
+    }),
+    prisma.category.findMany({
+      where: { workspaceId, ledger },
+      select: { id: true, name: true, budgetPeriod: true },
+    }),
+    prisma.budget.findMany({
+      where: {
+        workspaceId,
+        ledger,
+        month: { in: [...months, ...yearKeys] },
+      },
+      select: { categoryId: true, month: true, amount: true },
+    }),
+  ]);
+
+  const categorySeries = buildCategoryMonthSeries({
+    months,
+    categories,
+    transactions: txs.map((tx) => ({
+      date: tx.date,
+      amount: tx.amount,
+      categoryId: tx.categoryId,
+      categoryName: tx.category?.name ?? null,
+    })),
+    budgets,
   });
 
-  // --- Category trends (monthly stacked) ---
-  const months: string[] = [];
-  {
-    let c = startOfMonth(start);
-    const last = startOfMonth(end);
-    while (c <= last) {
-      months.push(monthKey(c));
-      const next = new Date(c);
-      next.setMonth(next.getMonth() + 1);
-      c = next;
-    }
-  }
-
-  const catTotals = new Map<string, number>();
-  const byMonthCat = new Map<string, Map<string, number>>();
-  for (const m of months) byMonthCat.set(m, new Map());
-
-  for (const tx of txs) {
-    if (!isSpendAmount(tx.amount, tx.category?.name)) continue;
-    const name = tx.category?.name ?? "Uncategorized";
-    const m = monthKey(tx.date);
-    const monthMap = byMonthCat.get(m);
-    if (!monthMap) continue;
-    monthMap.set(name, (monthMap.get(name) ?? 0) + tx.amount);
-    catTotals.set(name, (catTotals.get(name) ?? 0) + tx.amount);
-  }
-
-  const topCategories = [...catTotals.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
-    .map(([name]) => name);
-
-  const categoryTrends = months.map((m) => {
-    const monthMap = byMonthCat.get(m)!;
-    const row: Record<string, string | number> = {
-      key: m,
-      label: format(new Date(`${m}-01T12:00:00`), "MMM yy"),
-    };
-    let other = 0;
-    for (const [name, amount] of monthMap) {
-      if (topCategories.includes(name)) {
-        row[name] = Math.round(amount * 100) / 100;
-      } else {
-        other += amount;
-      }
-    }
-    for (const name of topCategories) {
-      if (row[name] == null) row[name] = 0;
-    }
-    row.Other = Math.round(other * 100) / 100;
-    return row;
+  const stacked = toStackedSpendRows(categorySeries, {
+    topN: 8,
+    include:
+      ledger === "personal"
+        ? (s) => spendBucket(s.name) === "flexible"
+        : undefined,
   });
-
-  const hasOther = categoryTrends.some(
-    (r) => typeof r.Other === "number" && (r.Other as number) > 0,
-  );
-  const categoryKeys = hasOther
-    ? [...topCategories.filter((c) => c !== "Other"), "Other"]
-    : topCategories.filter((c) => c !== "Other");
-  if (!hasOther) {
-    for (const row of categoryTrends) {
-      delete row.Other;
-    }
-  }
 
   // --- Merchants ---
   const merchants = aggregateMerchants(
@@ -526,19 +507,18 @@ export async function buildReports(params: {
     spendByCat,
   });
 
-  // Monthly fixed vs discretionary (personal tracking)
   const flexibilityTrends =
     ledger === "personal"
-      ? months.map((m) => {
-          const monthMap = byMonthCat.get(m)!;
+      ? months.map((m, i) => {
           let committed = 0;
           let flexible = 0;
           let reserve = 0;
-          for (const [name, amount] of monthMap) {
-            const bucket = spendBucket(name);
-            if (bucket === "committed") committed += amount;
-            else if (bucket === "reserve") reserve += amount;
-            else flexible += amount;
+          for (const series of Object.values(categorySeries.byCategoryId)) {
+            const spent = series.points[i]?.spent ?? 0;
+            const bucket = spendBucket(series.name);
+            if (bucket === "committed") committed += spent;
+            else if (bucket === "reserve") reserve += spent;
+            else flexible += spent;
           }
           return {
             key: m,
@@ -551,51 +531,6 @@ export async function buildReports(params: {
           };
         })
       : [];
-
-  // Prefer discretionary categories in the stacked trends for personal.
-  let reportCategoryTrends = categoryTrends;
-  let reportCategoryKeys = categoryKeys;
-  if (ledger === "personal") {
-    const discTop = [...catTotals.entries()]
-      .filter(([name]) => spendBucket(name) === "flexible")
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .map(([name]) => name);
-
-    reportCategoryTrends = months.map((m) => {
-      const monthMap = byMonthCat.get(m)!;
-      const row: Record<string, string | number> = {
-        key: m,
-        label: format(new Date(`${m}-01T12:00:00`), "MMM yy"),
-      };
-      let other = 0;
-      for (const [name, amount] of monthMap) {
-        if (spendBucket(name) !== "flexible") continue;
-        if (discTop.includes(name)) {
-          row[name] = Math.round(amount * 100) / 100;
-        } else {
-          other += amount;
-        }
-      }
-      for (const name of discTop) {
-        if (row[name] == null) row[name] = 0;
-      }
-      row.Other = Math.round(other * 100) / 100;
-      return row;
-    });
-
-    const discHasOther = reportCategoryTrends.some(
-      (r) => typeof r.Other === "number" && (r.Other as number) > 0,
-    );
-    reportCategoryKeys = discHasOther
-      ? [...discTop.filter((c) => c !== "Other"), "Other"]
-      : discTop.filter((c) => c !== "Other");
-    if (!discHasOther) {
-      for (const row of reportCategoryTrends) {
-        delete row.Other;
-      }
-    }
-  }
 
   // --- Age of money ---
   const age = computeAgeOfMoney(
@@ -641,9 +576,10 @@ export async function buildReports(params: {
           ? Math.round((flexibility.discretionary / totalSpend) * 1000) / 10
           : null,
     },
+    categorySeries,
     categoryTrends: {
-      months: reportCategoryTrends,
-      keys: reportCategoryKeys,
+      months: stacked.months,
+      keys: stacked.keys,
     },
     flexibilityTrends,
     merchants,

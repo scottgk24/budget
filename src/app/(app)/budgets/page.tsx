@@ -10,6 +10,7 @@ import {
 import { HIDDEN_MONEY, useMoneyFormat, usePrivacy } from "@/components/privacy-context";
 import { PageSkeleton } from "@/components/page-skeleton";
 import { Card, EmptyState, PageHeader, Select } from "@/components/ui";
+import type { CategoryMonthSeriesRegistry } from "@/lib/category-month-series";
 import {
   cn,
   formatMonthLabel,
@@ -24,6 +25,19 @@ import type { BudgetVarianceRow } from "@/components/budget-charts";
 
 const BudgetVarianceChart = dynamic(
   () => import("@/components/budget-charts").then((m) => m.BudgetVarianceChart),
+  {
+    ssr: false,
+    loading: () => (
+      <p className="flex h-56 items-center justify-center text-sm text-[var(--muted)]">
+        Loading chart…
+      </p>
+    ),
+  },
+);
+
+const CategorySpendVsBudgetChart = dynamic(
+  () =>
+    import("@/components/report-charts").then((m) => m.CategorySpendVsBudgetChart),
   {
     ssr: false,
     loading: () => (
@@ -287,6 +301,8 @@ export default function BudgetsPage() {
   const [spentByCategory, setSpentByCategory] = useState<Record<string, number>>({});
   const [spentYtdByCategory, setSpentYtdByCategory] = useState<Record<string, number>>({});
   const [averageByCategory, setAverageByCategory] = useState<Record<string, number>>({});
+  const [categorySeries, setCategorySeries] =
+    useState<CategoryMonthSeriesRegistry | null>(null);
   const [year, setYear] = useState(month.slice(0, 4));
   const [drafts, setDrafts] = useState<Record<string, number>>({});
   const [saved, setSaved] = useState<Record<string, number>>({});
@@ -315,6 +331,7 @@ export default function BudgetsPage() {
     setSpentByCategory(json.spentByCategory ?? {});
     setSpentYtdByCategory(json.spentYtdByCategory ?? {});
     setAverageByCategory(json.averageByCategory ?? {});
+    setCategorySeries(json.categorySeries ?? null);
     setYear(json.year ?? month.slice(0, 4));
     const next: Record<string, number> = {};
     for (const cat of json.categories as Category[]) {
@@ -1016,6 +1033,23 @@ export default function BudgetsPage() {
                             </Select>
                           ) : null}
                         </div>
+
+                        {categorySeries?.byCategoryId[cat.id] ? (
+                          <CategorySpendVsBudgetChart
+                            series={categorySeries.byCategoryId[cat.id]!}
+                            onSelect={({ month: m, categoryId, name }) => {
+                              const range = monthRange(m);
+                              setBreakdown({
+                                type: "transactions",
+                                title: name,
+                                subtitle: formatMonthLabel(m),
+                                from: toDateParam(range.start),
+                                to: toDateParam(range.end),
+                                categoryId,
+                              });
+                            }}
+                          />
+                        ) : null}
 
                         {annual ? (
                           <div className="grid gap-2 text-[11px] tabular-nums text-[var(--muted)] sm:grid-cols-2">
