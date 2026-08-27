@@ -541,17 +541,26 @@ export async function buildReports(params: {
     })),
   );
 
-  // Income breakdown by merchant/source
-  const incomeSources = new Map<string, number>();
+  // Income breakdown by merchant/source (same keying as Top merchants)
+  const incomeSources = new Map<string, { name: string; amount: number }>();
   for (const tx of txs) {
     if (!isIncomeAmount(tx.amount, tx.category?.name)) continue;
-    const name = (tx.merchantName || tx.name).trim() || "Income";
-    incomeSources.set(name, (incomeSources.get(name) ?? 0) + Math.abs(tx.amount));
+    const raw = (tx.merchantName || tx.name).trim() || "Income";
+    const key = merchantRuleKey(raw) || raw.toLowerCase().slice(0, 40);
+    const existing = incomeSources.get(key);
+    const amount = Math.abs(tx.amount);
+    if (existing) {
+      existing.amount += amount;
+      // Prefer a shorter display label when later deposits append IDs/refs.
+      if (raw.length < existing.name.length) existing.name = raw;
+    } else {
+      incomeSources.set(key, { name: raw, amount });
+    }
   }
-  const incomeBreakdown = [...incomeSources.entries()]
-    .map(([name, amount]) => ({
-      name,
-      amount: Math.round(amount * 100) / 100,
+  const incomeBreakdown = [...incomeSources.values()]
+    .map((row) => ({
+      name: row.name,
+      amount: Math.round(row.amount * 100) / 100,
     }))
     .sort((a, b) => b.amount - a.amount)
     .slice(0, 10);
