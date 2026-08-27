@@ -4,7 +4,6 @@ import {
   Area,
   AreaChart,
   Bar,
-  BarChart,
   CartesianGrid,
   Cell,
   ComposedChart,
@@ -93,6 +92,40 @@ const STACK_COLORS = [
   "#4a6b4e",
   "#b8975c",
 ];
+
+const AVG_LINE = {
+  stroke: COLORS.spend,
+  strokeDasharray: "6 4",
+  strokeWidth: 2,
+} as const;
+
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
+/** Mean of monthly totals over the chart’s time period (0 if empty). */
+function averageMonthlyTotal(
+  rows: Array<Record<string, string | number>>,
+  valueKeys: string[],
+): number {
+  if (rows.length === 0 || valueKeys.length === 0) return 0;
+  const sum = rows.reduce((acc, row) => {
+    let monthTotal = 0;
+    for (const key of valueKeys) {
+      const v = row[key];
+      if (typeof v === "number") monthTotal += v;
+    }
+    return acc + monthTotal;
+  }, 0);
+  return round2(sum / rows.length);
+}
+
+function withAverageLine<T extends Record<string, string | number>>(
+  rows: T[],
+  average: number,
+): Array<T & { average: number }> {
+  return rows.map((row) => ({ ...row, average }));
+}
 
 function MoneyTooltip({
   active,
@@ -209,6 +242,8 @@ export function CategoryTrendsChart({
   const hasData = data.some((row) =>
     keys.some((k) => typeof row[k] === "number" && (row[k] as number) > 0),
   );
+  const average = averageMonthlyTotal(data, keys);
+  const chartData = withAverageLine(data, average);
 
   if (!hasData || keys.length === 0) {
     return (
@@ -221,7 +256,7 @@ export function CategoryTrendsChart({
   return (
     <div className={`h-80 w-full ${onSelect ? "cursor-pointer" : ""}`}>
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+        <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
           <CartesianGrid stroke={COLORS.grid} strokeDasharray="3 3" vertical={false} />
           <XAxis
             dataKey="label"
@@ -275,7 +310,20 @@ export function CategoryTrendsChart({
               ))}
             </Bar>
           ))}
-        </BarChart>
+          {average > 0 ? (
+            <Line
+              type="monotone"
+              dataKey="average"
+              name="Average"
+              stroke={AVG_LINE.stroke}
+              strokeDasharray={AVG_LINE.strokeDasharray}
+              strokeWidth={AVG_LINE.strokeWidth}
+              dot={false}
+              activeDot={false}
+              legendType="plainline"
+            />
+          ) : null}
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );
@@ -289,12 +337,14 @@ export function CategorySpendVsBudgetChart({
   onSelect?: (sel: { month: string; categoryId: string; name: string }) => void;
 }) {
   const { formatCompactCurrency } = useMoneyFormat();
-  const data = series.points.map((p) => ({
+  const base = series.points.map((p) => ({
     key: p.month,
     label: format(new Date(`${p.month}-01T12:00:00`), "MMM yy"),
     spent: p.spent,
     budget: p.budget,
   }));
+  const average = averageMonthlyTotal(base, ["spent"]);
+  const data = withAverageLine(base, average);
   const hasData = data.some((d) => d.spent !== 0 || d.budget !== 0);
   const currentMonth = format(new Date(), "yyyy-MM");
 
@@ -366,6 +416,19 @@ export function CategorySpendVsBudgetChart({
             dot={false}
             activeDot={{ r: 4, strokeWidth: 0 }}
           />
+          {average > 0 ? (
+            <Line
+              type="monotone"
+              dataKey="average"
+              name="Average"
+              stroke={AVG_LINE.stroke}
+              strokeDasharray={AVG_LINE.strokeDasharray}
+              strokeWidth={AVG_LINE.strokeWidth}
+              dot={false}
+              activeDot={false}
+              legendType="plainline"
+            />
+          ) : null}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -528,6 +591,8 @@ export function FlexibilityTrendsChart({
       (d.Flexible ?? d.Discretionary ?? 0) > 0 ||
       (d.Reserves ?? 0) > 0,
   );
+  const average = averageMonthlyTotal(data, ["Committed", "Flexible", "Reserves"]);
+  const chartData = withAverageLine(data, average);
 
   if (!hasData) {
     return (
@@ -540,7 +605,7 @@ export function FlexibilityTrendsChart({
   return (
     <div className={`h-72 w-full ${onSelect ? "cursor-pointer" : ""}`}>
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+        <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
           <CartesianGrid stroke={COLORS.grid} strokeDasharray="3 3" vertical={false} />
           <XAxis
             dataKey="label"
@@ -662,7 +727,20 @@ export function FlexibilityTrendsChart({
               />
             ))}
           </Bar>
-        </BarChart>
+          {average > 0 ? (
+            <Line
+              type="monotone"
+              dataKey="average"
+              name="Average"
+              stroke={AVG_LINE.stroke}
+              strokeDasharray={AVG_LINE.strokeDasharray}
+              strokeWidth={AVG_LINE.strokeWidth}
+              dot={false}
+              activeDot={false}
+              legendType="plainline"
+            />
+          ) : null}
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );
