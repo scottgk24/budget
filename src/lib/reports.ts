@@ -21,7 +21,6 @@ import { prisma } from "@/lib/db";
 import {
   metricsRange,
   monthKeysInRange,
-  yearFromPeriod,
   type MetricsRangeId,
 } from "@/lib/format";
 import type { SpendPacePoint } from "@/lib/report-types";
@@ -422,7 +421,6 @@ export async function buildReports(params: {
   const { start, end } = metricsRange(range);
 
   const months = monthKeysInRange(start, end);
-  const yearKeys = [...new Set(months.map(yearFromPeriod))];
 
   const [txs, categories, budgets] = await Promise.all([
     prisma.transaction.findMany({
@@ -443,7 +441,6 @@ export async function buildReports(params: {
       where: {
         workspaceId,
         ledger,
-        month: { in: [...months, ...yearKeys] },
       },
       select: { categoryId: true, month: true, amount: true },
     }),

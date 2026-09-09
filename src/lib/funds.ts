@@ -8,6 +8,10 @@ import {
   NON_SPEND_CATEGORIES,
   type FundKind,
 } from "@/lib/categories";
+import {
+  indexMonthlyBudgets,
+  standingMonthlyAmount,
+} from "@/lib/budget-amount";
 import { prisma } from "@/lib/db";
 import {
   monthKey,
@@ -298,7 +302,6 @@ export async function computeFundMonth(opts: {
       where: {
         workspaceId: opts.workspaceId,
         ledger: "personal",
-        month: { in: [...new Set([...months, ...months.map(yearFromPeriod)])] },
       },
       select: { categoryId: true, month: true, amount: true },
     }),
@@ -341,6 +344,7 @@ export async function computeFundMonth(opts: {
   for (const b of budgets) {
     budgetByMonthCat.set(`${b.month}:${b.categoryId}`, b.amount);
   }
+  const monthlyIndex = indexMonthlyBudgets(budgets);
 
   function committedNeedFor(month: string): number {
     const year = yearFromPeriod(month);
@@ -349,7 +353,9 @@ export async function computeFundMonth(opts: {
       if (!committedCatIds.has(cat.id)) continue;
       if ((NON_SPEND_CATEGORIES as readonly string[]).includes(cat.name)) continue;
       const annual = isAnnualBudgetPeriod(cat.budgetPeriod);
-      const amount = budgetByMonthCat.get(`${annual ? year : month}:${cat.id}`) ?? 0;
+      const amount = annual
+        ? (budgetByMonthCat.get(`${year}:${cat.id}`) ?? 0)
+        : standingMonthlyAmount(monthlyIndex.get(cat.id), month);
       need += annual ? monthlyAllotment(amount) : amount;
     }
     return round2(need);

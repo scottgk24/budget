@@ -10,6 +10,10 @@ import {
   excludeNonSpendCategory,
   isAnnualBudgetPeriod,
 } from "@/lib/categories";
+import {
+  indexMonthlyBudgets,
+  standingMonthlyAmount,
+} from "@/lib/budget-amount";
 import { buildCategoryMonthSeries } from "@/lib/category-month-series";
 import { computeFundMonth, ensureDefaultFunds } from "@/lib/funds";
 import { prisma } from "@/lib/db";
@@ -57,40 +61,13 @@ export async function GET(req: Request) {
     const { start: yearStart, end: yearEnd } = yearRange(year);
     const histStart = startOfMonth(subMonths(startOfMonth(start), AVG_MONTHS));
     const seriesMonths = monthKeysInRange(histStart, end);
-    const yearKeys = [...new Set(seriesMonths.map(yearFromPeriod))];
-    const budgetPeriodKeys = [...seriesMonths, ...yearKeys];
+    const annualIdSet = new Set(annualIds);
 
-    const [monthlyBudgets, annualBudgets, seriesBudgets, spent, spentYtd, seriesTxs] =
+    const [allBudgets, spent, spentYtd, seriesTxs] =
       await Promise.all([
-        monthlyIds.length
-          ? prisma.budget.findMany({
-              where: {
-                workspaceId: workspace.id,
-                ledger,
-                month,
-                categoryId: { in: monthlyIds },
-              },
-              include: { category: true },
-            })
-          : Promise.resolve([]),
-        annualIds.length
-          ? prisma.budget.findMany({
-              where: {
-                workspaceId: workspace.id,
-                ledger,
-                month: year,
-                categoryId: { in: annualIds },
-              },
-              include: { category: true },
-            })
-          : Promise.resolve([]),
         prisma.budget.findMany({
-          where: {
-            workspaceId: workspace.id,
-            ledger,
-            month: { in: budgetPeriodKeys },
-          },
-          select: { categoryId: true, month: true, amount: true },
+          where: { workspaceId: workspace.id, ledger },
+          include: { category: true },
         }),
         prisma.transaction.groupBy({
           by: ["categoryId"],
@@ -131,7 +108,36 @@ export async function GET(req: Request) {
         }),
       ]);
 
+    const monthlyIndex = indexMonthlyBudgets(allBudgets);
+    const annualBudgets = allBudgets.filter(
+      (b) => annualIdSet.has(b.categoryId) && b.month === year,
+    );
+    const monthlyBudgets = monthlyIds.flatMap((id) => {
+      const exact = allBudgets.find((b) => b.categoryId === id && b.month === month);
+      if (exact) return [exact];
+      const amount = standingMonthlyAmount(monthlyIndex.get(id), month);
+      const category = categories.find((c) => c.id === id);
+      if (!category || amount === 0) return [];
+      return [
+        {
+          id: `standing:${id}:${month}`,
+          workspaceId: workspace.id,
+          categoryId: id,
+          ledger,
+          month,
+          amount,
+          createdAt: category.createdAt,
+          updatedAt: category.createdAt,
+          category,
+        },
+      ];
+    });
     const budgets = [...monthlyBudgets, ...annualBudgets];
+    const seriesBudgets = allBudgets.map((b) => ({
+      categoryId: b.categoryId,
+      month: b.month,
+      amount: b.amount,
+    }));
 
     const spentByCategory = Object.fromEntries(
       spent.map((s) => [s.categoryId ?? "uncategorized", s._sum.amount ?? 0]),

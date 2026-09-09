@@ -6,6 +6,10 @@ import {
   NON_SPEND_CATEGORIES,
 } from "@/lib/categories";
 import {
+  indexMonthlyBudgets,
+  standingMonthlyAmount,
+} from "@/lib/budget-amount";
+import {
   formatMonthLabel,
   monthlyAllotment,
   yearFromPeriod,
@@ -43,14 +47,15 @@ function allotmentForMonth(
   budgetPeriod: "monthly" | "annual",
   categoryId: string,
   month: string,
-  budgetIndex: Map<string, number>,
+  annualIndex: Map<string, number>,
+  monthlyIndex: Map<string, Array<{ month: string; amount: number }>>,
 ): number {
   if (budgetPeriod === "annual") {
     const year = yearFromPeriod(month);
-    const annual = budgetIndex.get(`${categoryId}:${year}`);
+    const annual = annualIndex.get(`${categoryId}:${year}`);
     return annual != null ? monthlyAllotment(annual) : 0;
   }
-  return budgetIndex.get(`${categoryId}:${month}`) ?? 0;
+  return standingMonthlyAmount(monthlyIndex.get(categoryId), month);
 }
 
 export function buildCategoryMonthSeries(params: {
@@ -65,10 +70,11 @@ export function buildCategoryMonthSeries(params: {
   budgets: Array<{ categoryId: string; month: string; amount: number }>;
 }): CategoryMonthSeriesRegistry {
   const { months } = params;
-  const budgetIndex = new Map<string, number>();
+  const annualIndex = new Map<string, number>();
   for (const b of params.budgets) {
-    budgetIndex.set(`${b.categoryId}:${b.month}`, b.amount);
+    annualIndex.set(`${b.categoryId}:${b.month}`, b.amount);
   }
+  const monthlyIndex = indexMonthlyBudgets(params.budgets);
 
   const byCategoryId: Record<string, CategoryMonthSeries> = {};
 
@@ -87,7 +93,15 @@ export function buildCategoryMonthSeries(params: {
         month,
         label: formatMonthLabel(month),
         spent: 0,
-        budget: round2(allotmentForMonth(budgetPeriod, cat.id, month, budgetIndex)),
+        budget: round2(
+          allotmentForMonth(
+            budgetPeriod,
+            cat.id,
+            month,
+            annualIndex,
+            monthlyIndex,
+          ),
+        ),
       })),
     };
   }

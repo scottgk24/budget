@@ -9,6 +9,10 @@ import {
   fundKindForSlug,
   defaultFundSlugForCategoryName,
 } from "@/lib/categories";
+import {
+  indexMonthlyBudgets,
+  standingMonthlyAmountOrNull,
+} from "@/lib/budget-amount";
 import { computeFundMonth, ensureDefaultFunds } from "@/lib/funds";
 import { prisma } from "@/lib/db";
 import { splitAccountBalances, sumNetBalances } from "@/lib/accounts";
@@ -62,7 +66,7 @@ export async function GET(req: Request) {
       pending: false,
     };
 
-    const [spendAgg, incomeAgg, categories, monthlyBudgets, annualBudgets, byCategory, byCategoryYtd, holdings] =
+    const [spendAgg, incomeAgg, categories, allBudgets, byCategory, byCategoryYtd, holdings] =
       await Promise.all([
         prisma.transaction.aggregate({
           where: {
@@ -83,12 +87,8 @@ export async function GET(req: Request) {
           where: { workspaceId: workspace.id, ledger },
         }),
         prisma.budget.findMany({
-          where: { workspaceId: workspace.id, ledger, month },
-          include: { category: true },
-        }),
-        prisma.budget.findMany({
-          where: { workspaceId: workspace.id, ledger, month: year },
-          include: { category: true },
+          where: { workspaceId: workspace.id, ledger },
+          select: { categoryId: true, month: true, amount: true },
         }),
         prisma.transaction.groupBy({
           by: ["categoryId"],
@@ -125,14 +125,19 @@ export async function GET(req: Request) {
       categories.filter((c) => isAnnualBudgetPeriod(c.budgetPeriod)).map((c) => c.id),
     );
 
+    const monthlyIndex = indexMonthlyBudgets(allBudgets);
     const monthlyBudgetByCat = Object.fromEntries(
-      monthlyBudgets
-        .filter((b) => !annualIdSet.has(b.categoryId))
-        .map((b) => [b.categoryId, b.amount]),
+      categories
+        .filter((c) => !annualIdSet.has(c.id))
+        .map((c) => {
+          const amount = standingMonthlyAmountOrNull(monthlyIndex.get(c.id), month);
+          return amount == null ? null : ([c.id, amount] as const);
+        })
+        .filter((row): row is readonly [string, number] => row != null),
     );
     const annualBudgetByCat = Object.fromEntries(
-      annualBudgets
-        .filter((b) => annualIdSet.has(b.categoryId))
+      allBudgets
+        .filter((b) => annualIdSet.has(b.categoryId) && b.month === year)
         .map((b) => [b.categoryId, b.amount]),
     );
 
