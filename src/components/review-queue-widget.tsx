@@ -69,8 +69,9 @@ export function ReviewQueueWidget({
   collapsed?: boolean;
 }) {
   const { ledger, isCurrent } = useLedgerGuard();
-  const { href: appHref } = useAppBasePath();
+  const { isDemo, href: appHref } = useAppBasePath();
   const { formatSignedCurrency } = useMoneyFormat();
+  const lastLoadAt = useRef(0);
   const [open, setOpen] = useState(false);
   const [olderOpen, setOlderOpen] = useState(false);
   const [data, setData] = useState<ReviewQueueData | null>(null);
@@ -90,6 +91,7 @@ export function ReviewQueueWidget({
       const res = await fetch(`/api/review-queue?ledger=${requested}&limit=16`);
       const json = await res.json();
       if (!isCurrent(requested) || !res.ok) return;
+      lastLoadAt.current = Date.now();
       setData(json);
       setDataLedger(requested);
     } catch {
@@ -99,12 +101,22 @@ export function ReviewQueueWidget({
 
   useEffect(() => {
     const t = window.setTimeout(() => void load(), 0);
-    const interval = window.setInterval(() => void load(), 60_000);
+    if (isDemo) {
+      return () => window.clearTimeout(t);
+    }
+    function refreshIfVisible() {
+      if (document.visibilityState !== "visible") return;
+      if (Date.now() - lastLoadAt.current < 30_000) return;
+      void load();
+    }
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    window.addEventListener("focus", refreshIfVisible);
     return () => {
       window.clearTimeout(t);
-      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+      window.removeEventListener("focus", refreshIfVisible);
     };
-  }, [load]);
+  }, [load, isDemo]);
 
   useEffect(() => {
     if (!open) return;

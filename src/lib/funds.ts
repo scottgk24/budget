@@ -1,11 +1,12 @@
 import { addMonths, parseISO } from "date-fns";
+import { Prisma } from "@prisma/client";
 import {
   defaultFundSlugForCategoryName,
   fundKindForSlug,
+  INCOME_CATEGORY,
   isAnnualBudgetPeriod,
-  isIncomeAmount,
-  isSpendAmount,
   NON_SPEND_CATEGORIES,
+  TRANSFER_CATEGORY,
   type FundKind,
 } from "@/lib/categories";
 import {
@@ -277,6 +278,50 @@ export async function ensureDefaultFunds(workspaceId: string, ledger = "personal
   }
 }
 
+type FundMonthAggRow = {
+  month: string;
+  fund_id: string | null;
+  category_id: string | null;
+  category_name: string | null;
+  default_fund_id: string | null;
+  income_sum: number | Prisma.Decimal | null;
+  spend_sum: number | Prisma.Decimal | null;
+};
+
+/** Month/fund totals in Postgres so we don't pull a year of transaction rows. */
+async function loadFundMonthActivity(opts: {
+  workspaceId: string;
+  start: Date;
+  end: Date;
+}): Promise<FundMonthAggRow[]> {
+  return prisma.$queryRaw<FundMonthAggRow[]>(Prisma.sql`
+    SELECT
+      to_char(t.date AT TIME ZONE 'UTC', 'YYYY-MM') AS month,
+      t."fundId" AS fund_id,
+      t."categoryId" AS category_id,
+      c.name AS category_name,
+      c."defaultFundId" AS default_fund_id,
+      SUM(t.amount) FILTER (
+        WHERE t.amount < 0 AND c.name = ${INCOME_CATEGORY}
+      ) AS income_sum,
+      SUM(t.amount) FILTER (
+        WHERE t.amount <> 0
+          AND (
+            c.name IS NULL
+            OR c.name NOT IN (${INCOME_CATEGORY}, ${TRANSFER_CATEGORY})
+          )
+      ) AS spend_sum
+    FROM "Transaction" t
+    LEFT JOIN "Category" c ON c.id = t."categoryId"
+    WHERE t."workspaceId" = ${opts.workspaceId}
+      AND t.ledger = 'personal'
+      AND t.pending = false
+      AND t.date >= ${opts.start}
+      AND t.date <= ${opts.end}
+    GROUP BY 1, 2, 3, 4, 5
+  `);
+}
+
 export async function computeFundMonth(opts: {
   workspaceId: string;
   month: string;
@@ -288,7 +333,7 @@ export async function computeFundMonth(opts: {
   const start = monthRange(months[0]!).start;
   const end = monthRange(opts.month).end;
 
-  const [funds, categories, budgets, transactions, covers] = await Promise.all([
+  const [funds, categories, budgets, activity, covers] = await Promise.all([
     prisma.fund.findMany({
       where: { workspaceId: opts.workspaceId, ledger: "personal" },
       select: FUND_SELECT,
@@ -305,20 +350,7 @@ export async function computeFundMonth(opts: {
       },
       select: { categoryId: true, month: true, amount: true },
     }),
-    prisma.transaction.findMany({
-      where: {
-        workspaceId: opts.workspaceId,
-        ledger: "personal",
-        pending: false,
-        date: { gte: start, lte: end },
-      },
-      select: {
-        amount: true,
-        date: true,
-        fundId: true,
-        category: { select: { name: true, defaultFundId: true } },
-      },
-    }),
+    loadFundMonthActivity({ workspaceId: opts.workspaceId, start, end }),
     prisma.fundCover.findMany({
       where: {
         workspaceId: opts.workspaceId,
@@ -363,23 +395,26 @@ export async function computeFundMonth(opts: {
 
   const incomeByMonth = new Map<string, number>();
   const spendByMonthFund = new Map<string, number>();
-  for (const tx of transactions) {
-    const m = monthKey(tx.date);
-    const name = tx.category?.name;
-    if (isIncomeAmount(tx.amount, name)) {
-      incomeByMonth.set(m, (incomeByMonth.get(m) ?? 0) + Math.abs(tx.amount));
-      continue;
+  for (const row of activity) {
+    const income = Number(row.income_sum ?? 0);
+    if (income !== 0) {
+      incomeByMonth.set(
+        row.month,
+        (incomeByMonth.get(row.month) ?? 0) + Math.abs(income),
+      );
     }
-    if (!isSpendAmount(tx.amount, name)) continue;
+    const spend = Number(row.spend_sum ?? 0);
+    if (spend === 0) continue;
+    const name = row.category_name;
     const fundId =
-      tx.fundId ??
-      tx.category?.defaultFundId ??
+      row.fund_id ??
+      row.default_fund_id ??
       (defaultFundSlugForCategoryName(name)
         ? funds.find((f) => f.slug === defaultFundSlugForCategoryName(name))?.id
         : null) ??
       flexible.id;
-    const key = `${m}:${fundId}`;
-    spendByMonthFund.set(key, (spendByMonthFund.get(key) ?? 0) + tx.amount);
+    const key = `${row.month}:${fundId}`;
+    spendByMonthFund.set(key, (spendByMonthFund.get(key) ?? 0) + spend);
   }
 
   const coversByMonth = new Map<string, Array<{ fromFundId: string; amount: number }>>();
