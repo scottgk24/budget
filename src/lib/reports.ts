@@ -26,13 +26,27 @@ import {
 import type { SpendPacePoint } from "@/lib/report-types";
 import type { Ledger } from "@/lib/types";
 
-function spendBucket(
+type SpendBucket = "committed" | "flexible" | "reserve";
+
+/**
+ * Prefer the transaction/category fund assignment; fall back to the default
+ * category-name map so Reports matches Dashboard/Metrics.
+ */
+export function resolveSpendBucket(
+  fundKind: string | null | undefined,
   categoryName: string | null | undefined,
-): "committed" | "flexible" | "reserve" {
-  const kind = fundKindForSlug(defaultFundSlugForCategoryName(categoryName));
+): SpendBucket {
+  const kind =
+    (fundKind as "committed" | "flexible" | "reserve" | "buffer" | null | undefined) ??
+    fundKindForSlug(defaultFundSlugForCategoryName(categoryName));
   if (kind === "committed") return "committed";
   if (kind === "reserve") return "reserve";
   return "flexible";
+}
+
+/** @deprecated Prefer resolveSpendBucket with a real fund kind. */
+function spendBucket(categoryName: string | null | undefined): SpendBucket {
+  return resolveSpendBucket(null, categoryName);
 }
 
 type SankeyNode = { name: string };
@@ -45,6 +59,7 @@ export type MerchantRollup = {
   amount: number;
   count: number;
   categoryName: string | null;
+  fundKind?: "committed" | "flexible" | "reserve" | null;
 };
 
 export function aggregateMerchants(
@@ -53,6 +68,7 @@ export function aggregateMerchants(
     name: string;
     merchantName: string | null;
     categoryName?: string | null;
+    fundKind?: "committed" | "flexible" | "reserve" | null;
   }>,
   limit?: number,
 ): MerchantRollup[] {
@@ -72,6 +88,7 @@ export function aggregateMerchants(
         amount: tx.amount,
         count: 1,
         categoryName: tx.categoryName ?? null,
+        fundKind: tx.fundKind ?? null,
       });
     }
   }
@@ -127,8 +144,10 @@ export function buildCashFlowSankey(params: {
   ledger: Ledger;
   incomeTotal: number;
   spendByCat: Map<string, number>;
+  /** Category name → bucket from fund assignments (falls back to name map). */
+  categoryBuckets?: Map<string, SpendBucket>;
 }): { nodes: SankeyNode[]; links: SankeyLink[] } {
-  const { ledger, incomeTotal, spendByCat } = params;
+  const { ledger, incomeTotal, spendByCat, categoryBuckets } = params;
   const totalSpend = [...spendByCat.values()].reduce((a, b) => a + b, 0);
   const deficit = round2(Math.max(0, totalSpend - incomeTotal));
   const surplus = round2(Math.max(0, incomeTotal - totalSpend));
@@ -207,7 +226,8 @@ export function buildCashFlowSankey(params: {
     ["reserve", []],
   ]);
   for (const [name, value] of spendByCat) {
-    byBucket.get(spendBucket(name))!.push({ name, value });
+    const bucket = categoryBuckets?.get(name) ?? spendBucket(name);
+    byBucket.get(bucket)!.push({ name, value });
   }
   const committedFlows = trimFlows(byBucket.get("committed")!, 6, 0.04);
   const flexibleFlows = trimFlows(byBucket.get("flexible")!, 7, 0.04);
@@ -295,12 +315,13 @@ export function buildCashFlowSankey(params: {
 
 export function sumSpendByFlexibility(
   spendByCat: Map<string, number>,
+  categoryBuckets?: Map<string, SpendBucket>,
 ): { fixed: number; discretionary: number; reserve: number } {
   let fixed = 0;
   let discretionary = 0;
   let reserve = 0;
   for (const [name, value] of spendByCat) {
-    const bucket = spendBucket(name);
+    const bucket = categoryBuckets?.get(name) ?? spendBucket(name);
     if (bucket === "committed") fixed += value;
     else if (bucket === "reserve") reserve += value;
     else discretionary += value;
@@ -352,9 +373,7 @@ export async function buildSpendPace(params: {
   for (const tx of txs) {
     if (!isSpendAmount(tx.amount, tx.category?.name)) continue;
     if (fundKind !== "all" && ledger === "personal") {
-      const kind =
-        (tx.fund?.kind as "committed" | "flexible" | "reserve" | "buffer" | undefined) ??
-        spendBucket(tx.category?.name);
+      const kind = resolveSpendBucket(tx.fund?.kind, tx.category?.name);
       if (kind !== fundKind) continue;
     }
     const key = format(tx.date, "yyyy-MM-dd");
@@ -430,12 +449,20 @@ export async function buildReports(params: {
         pending: false,
         date: { gte: start, lte: end },
       },
-      include: { category: { select: { id: true, name: true } } },
+      include: {
+        category: { select: { id: true, name: true } },
+        fund: { select: { kind: true, slug: true } },
+      },
       orderBy: { date: "asc" },
     }),
     prisma.category.findMany({
       where: { workspaceId, ledger },
-      select: { id: true, name: true, budgetPeriod: true },
+      select: {
+        id: true,
+        name: true,
+        budgetPeriod: true,
+        defaultFund: { select: { kind: true, slug: true } },
+      },
     }),
     prisma.budget.findMany({
       where: {
@@ -445,6 +472,14 @@ export async function buildReports(params: {
       select: { categoryId: true, month: true, amount: true },
     }),
   ]);
+
+  const categoryBucketById = new Map<string, SpendBucket>();
+  const categoryBucketByName = new Map<string, SpendBucket>();
+  for (const cat of categories) {
+    const bucket = resolveSpendBucket(cat.defaultFund?.kind, cat.name);
+    categoryBucketById.set(cat.id, bucket);
+    categoryBucketByName.set(cat.name, bucket);
+  }
 
   const categorySeries = buildCategoryMonthSeries({
     months,
@@ -462,7 +497,9 @@ export async function buildReports(params: {
     topN: 8,
     include:
       ledger === "personal"
-        ? (s) => spendBucket(s.name) === "flexible"
+        ? (s) =>
+            (categoryBucketById.get(s.categoryId) ??
+              resolveSpendBucket(null, s.name)) === "flexible"
         : undefined,
   });
 
@@ -475,6 +512,7 @@ export async function buildReports(params: {
         name: tx.name,
         merchantName: tx.merchantName,
         categoryName: tx.category?.name ?? null,
+        fundKind: resolveSpendBucket(tx.fund?.kind, tx.category?.name),
       })),
     15,
   );
@@ -482,26 +520,37 @@ export async function buildReports(params: {
   // --- Sankey + flexibility totals ---
   let incomeTotal = 0;
   const spendByCat = new Map<string, number>();
+  const incomeByMonth = new Map<string, number>();
   for (const tx of txs) {
     if (isIncomeAmount(tx.amount, tx.category?.name)) {
-      incomeTotal += Math.abs(tx.amount);
+      const amt = Math.abs(tx.amount);
+      incomeTotal += amt;
+      const mk = format(tx.date, "yyyy-MM");
+      incomeByMonth.set(mk, (incomeByMonth.get(mk) ?? 0) + amt);
       continue;
     }
     if (!isSpendAmount(tx.amount, tx.category?.name)) continue;
     const name = tx.category?.name ?? "Uncategorized";
     spendByCat.set(name, (spendByCat.get(name) ?? 0) + tx.amount);
+    if (!categoryBucketByName.has(name)) {
+      categoryBucketByName.set(
+        name,
+        resolveSpendBucket(tx.fund?.kind, name),
+      );
+    }
   }
 
   const totalSpend = [...spendByCat.values()].reduce((a, b) => a + b, 0);
   const savings = round2(incomeTotal - totalSpend);
   const flexibility =
     ledger === "personal"
-      ? sumSpendByFlexibility(spendByCat)
+      ? sumSpendByFlexibility(spendByCat, categoryBucketByName)
       : { fixed: 0, discretionary: round2(totalSpend), reserve: 0 };
   const { nodes: sankeyNodes, links: sankeyLinks } = buildCashFlowSankey({
     ledger,
     incomeTotal,
     spendByCat,
+    categoryBuckets: categoryBucketByName,
   });
 
   const flexibilityTrends =
@@ -512,7 +561,9 @@ export async function buildReports(params: {
           let reserve = 0;
           for (const series of Object.values(categorySeries.byCategoryId)) {
             const spent = series.points[i]?.spent ?? 0;
-            const bucket = spendBucket(series.name);
+            const bucket =
+              categoryBucketById.get(series.categoryId) ??
+              resolveSpendBucket(null, series.name);
             if (bucket === "committed") committed += spent;
             else if (bucket === "reserve") reserve += spent;
             else flexible += spent;
@@ -525,11 +576,12 @@ export async function buildReports(params: {
             Reserves: round2(reserve),
             Fixed: round2(committed),
             Discretionary: round2(flexible),
+            Income: round2(incomeByMonth.get(m) ?? 0),
           };
         })
       : [];
 
-  // --- Age of money ---
+  // --- Age of money (full selected range — chart and card share one window) ---
   const age = computeAgeOfMoney(
     txs.map((tx) => ({
       amount: tx.amount,
@@ -595,7 +647,7 @@ export async function buildReports(params: {
     },
     ageOfMoney: {
       ageDays: age.ageDays,
-      series: age.series.slice(-90),
+      series: age.series,
     },
     incomeBreakdown,
   };

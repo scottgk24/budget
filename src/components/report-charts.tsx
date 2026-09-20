@@ -25,7 +25,9 @@ import { format, parseISO } from "date-fns";
 export type { SpendPacePoint };
 
 const COLORS = {
-  spend: "#d4655a",
+  /** Neutral spend (not “over budget”). Reserve coral for overages. */
+  spend: "#7a9a6a",
+  spendOver: "#d4655a",
   income: "#7ec07a",
   ideal: "#8fb396",
   pace: "#d4a857",
@@ -138,16 +140,21 @@ function MoneyTooltip({
 }) {
   const { formatCurrency } = useMoneyFormat();
   if (!active || !payload?.length) return null;
+  const rows = payload.filter(
+    (p) =>
+      p.value != null &&
+      p.name !== "Average" &&
+      !(typeof p.value === "number" && Math.abs(p.value) < 0.005),
+  );
+  if (rows.length === 0) return null;
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm shadow-sm">
       <p className="mb-1 font-medium">{label}</p>
-      {payload.map((p) =>
-        p.value == null ? null : (
-          <p key={p.name} style={{ color: p.color }} className="tabular-nums">
-            {p.name}: {formatCurrency(p.value)}
-          </p>
-        ),
-      )}
+      {rows.map((p) => (
+        <p key={p.name} style={{ color: p.color }} className="tabular-nums">
+          {p.name}: {formatCurrency(p.value as number)}
+        </p>
+      ))}
     </div>
   );
 }
@@ -402,6 +409,11 @@ export function CategorySpendVsBudgetChart({
             {data.map((row) => (
               <Cell
                 key={`spent-${row.key}`}
+                fill={
+                  row.budget > 0 && row.spent > row.budget + 0.005
+                    ? COLORS.spendOver
+                    : COLORS.spend
+                }
                 fillOpacity={row.key === currentMonth ? 0.55 : 1}
               />
             ))}
@@ -577,6 +589,7 @@ export function FlexibilityTrendsChart({
     Reserves?: number;
     Fixed?: number;
     Discretionary?: number;
+    Income?: number;
   }>;
   onSelect?: (selection: {
     monthKey: string;
@@ -585,11 +598,13 @@ export function FlexibilityTrendsChart({
   }) => void;
 }) {
   const { formatCompactCurrency } = useMoneyFormat();
+  const hasIncome = data.some((d) => (d.Income ?? 0) > 0);
   const hasData = data.some(
     (d) =>
       (d.Committed ?? d.Fixed ?? 0) > 0 ||
       (d.Flexible ?? d.Discretionary ?? 0) > 0 ||
-      (d.Reserves ?? 0) > 0,
+      (d.Reserves ?? 0) > 0 ||
+      (d.Income ?? 0) > 0,
   );
   const average = averageMonthlyTotal(data, ["Committed", "Flexible", "Reserves"]);
   const chartData = withAverageLine(data, average);
@@ -738,6 +753,17 @@ export function FlexibilityTrendsChart({
               dot={false}
               activeDot={false}
               legendType="plainline"
+            />
+          ) : null}
+          {hasIncome ? (
+            <Line
+              type="monotone"
+              dataKey="Income"
+              name="Income"
+              stroke={COLORS.income}
+              strokeWidth={2.5}
+              dot={false}
+              activeDot={{ r: 4, strokeWidth: 0 }}
             />
           ) : null}
         </ComposedChart>

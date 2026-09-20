@@ -660,10 +660,15 @@ export default function BudgetsPage() {
               </p>
             </Card>
             {kind === "personal" ? (
-              <Card>
-                <p className="text-sm text-[var(--muted)]">Flexible left</p>
+              <Card className="ring-1 ring-[var(--accent)]/25">
+                <p className="text-sm text-[var(--muted)]">
+                  Flexible left
+                  <span className="ml-1.5 text-[11px] font-normal">
+                    · {formatMonthLabel(month)}
+                  </span>
+                </p>
                 <p
-                  className={`mt-2 font-display text-2xl tabular-nums ${
+                  className={`mt-2 font-display text-3xl tabular-nums ${
                     flexibleLeft >= 0
                       ? "text-[var(--positive)]"
                       : "text-[var(--danger)]"
@@ -686,7 +691,12 @@ export default function BudgetsPage() {
               </Card>
             ) : null}
             <Card>
-              <p className="text-sm text-[var(--muted)]">{copy.spentThisMonth}</p>
+              <p className="text-sm text-[var(--muted)]">
+                {copy.spentThisMonth}
+                <span className="ml-1.5 text-[11px] font-normal">
+                  · {formatMonthLabel(month)}
+                </span>
+              </p>
               <p className="mt-2 font-display text-2xl tabular-nums">
                 {formatCurrency(totalSpent)}
               </p>
@@ -707,11 +717,16 @@ export default function BudgetsPage() {
               ) : null}
             </Card>
             <Card>
-              <p className="text-sm text-[var(--muted)]">{copy.remaining}</p>
+              <p className="text-sm text-[var(--muted)]">
+                {copy.remaining}
+                <span className="ml-1.5 text-[11px] font-normal">
+                  · {formatMonthLabel(month)}
+                </span>
+              </p>
               <p
                 className={`mt-2 font-display text-2xl tabular-nums ${
                   totalBudgeted - totalSpent >= 0
-                    ? "text-[var(--positive)]"
+                    ? "text-[var(--muted)]"
                     : "text-[var(--danger)]"
                 }`}
               >
@@ -720,20 +735,20 @@ export default function BudgetsPage() {
                   : "—"}
               </p>
               <p className="mt-1 text-xs text-[var(--muted)]">
-                Budget minus spend (monthly view)
+                All budgets minus spend (not flexible left)
               </p>
             </Card>
           </div>
 
           <Card className="mb-6">
-            <h2 className="mb-1 font-display text-lg">Spend vs budget share</h2>
+            <h2 className="mb-1 font-display text-lg">Over / under budget</h2>
             <p className="mb-3 text-xs text-[var(--muted)]">
-              Percentage-point gap between each category’s share of spend and
-              share of budget. Over-spent mix is coral; under is green.
+              Dollars over (coral) or under (green) each category’s monthly
+              budget, sorted by how far off.
             </p>
             {cashDiffersFromMonthly ? (
               <p className="mb-2 text-xs text-[var(--muted)]">
-                Annual categories use YTD ÷ 12
+                Annual categories use year-to-date ÷ 12
               </p>
             ) : null}
             <BudgetVarianceChart
@@ -783,7 +798,7 @@ export default function BudgetsPage() {
               <span>Category</span>
               <span className="text-right">{copy.budgetColumn}</span>
               <span className="text-right">Actual</span>
-              <span className="text-right">{copy.remaining}</span>
+              <span className="text-right">Remaining</span>
               <span className="sr-only">Expand</span>
             </div>
 
@@ -815,8 +830,9 @@ export default function BudgetsPage() {
                                     : "text-[var(--muted)]"
                                 }`}
                               >
-                                Balance {formatCurrency(closing)} · contributing{" "}
+                                {group.fund!.name} fund: {formatCurrency(closing)} · adds{" "}
                                 {formatCurrency(contribution)}/mo
+                                {closing < 0 ? " · needs a top-up" : ""}
                               </p>
                             );
                           })()
@@ -829,8 +845,8 @@ export default function BudgetsPage() {
                       </div>
                       {group.fund.kind === "reserve" ? (
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] uppercase tracking-wide text-[var(--muted)]">
-                            /mo
+                          <span className="text-[10px] text-[var(--muted)]">
+                            Adds /mo
                           </span>
                           <BudgetAmountInput
                             value={group.fund.monthlyContribution}
@@ -851,13 +867,14 @@ export default function BudgetsPage() {
                 const annual = isAnnual(cat);
                 const monthSpent = spentByCategory[cat.id] ?? 0;
                 const ytdSpent = spentYtdByCategory[cat.id] ?? 0;
-                const progressSpent = annual ? ytdSpent : monthSpent;
                 const monthlyAvg = averageByCategory[cat.id] ?? 0;
-                const average = annual ? Math.round(monthlyAvg * 12) : monthlyAvg;
                 const budgetAmt = drafts[cat.id] ?? 0;
                 const monthLimit = annual ? monthlyAllotment(budgetAmt) : budgetAmt;
                 const yearLimit = annual ? budgetAmt : budgetAmt * 12;
-                const primaryLimit = annual ? yearLimit : monthLimit;
+                // Collapsed row is always this-month numbers; YTD lives in the expand panel.
+                const progressSpent = monthSpent;
+                const primaryLimit = monthLimit;
+                const average = monthlyAvg;
                 const primaryRemaining = primaryLimit - progressSpent;
                 const over = primaryLimit > 0 && progressSpent > primaryLimit;
                 const isOpen = expanded.has(cat.id);
@@ -916,7 +933,7 @@ export default function BudgetsPage() {
                         </div>
                         <div className="min-w-0 text-right">
                           <p className="mb-0.5 text-[10px] uppercase tracking-wide text-[var(--muted)] sm:hidden">
-                            Actual{annual ? " YTD" : ""}
+                            Actual
                           </p>
                           <p
                             className={cn(
@@ -926,18 +943,18 @@ export default function BudgetsPage() {
                           >
                             {formatCurrency(progressSpent)}
                           </p>
-                          {annual && monthSpent > 0 ? (
+                          {annual ? (
                             <p
                               className="text-[10px] tabular-nums text-[var(--muted)]"
-                              title="Charged this month"
+                              title="Yearly budget shown as a monthly share"
                             >
-                              This mo. {formatCurrency(monthSpent)}
+                              of {formatCurrency(monthLimit)}/mo share
                             </p>
                           ) : null}
                         </div>
                         <div className="min-w-0 text-right">
                           <p className="mb-0.5 text-[10px] uppercase tracking-wide text-[var(--muted)] sm:hidden">
-                            {copy.remaining}
+                            Remaining
                           </p>
                           <p
                             className={cn(
@@ -965,12 +982,12 @@ export default function BudgetsPage() {
                       </button>
                     </div>
 
-                    {/* Row 2 — pace progress */}
+                    {/* Row 2 — pace progress (this month) */}
                     <div className="mt-1.5 sm:pr-8">
                       <PaceProgressBar
                         spent={progressSpent}
                         limit={primaryLimit}
-                        annual={annual}
+                        annual={false}
                         average={average}
                       />
                     </div>
@@ -1054,13 +1071,13 @@ export default function BudgetsPage() {
                         {annual ? (
                           <div className="grid gap-2 text-[11px] tabular-nums text-[var(--muted)] sm:grid-cols-2">
                             <div className="flex items-baseline justify-between gap-2 rounded-md border border-[var(--border)]/50 px-2.5 py-2">
-                              <span>This month</span>
+                              <span>So far this year</span>
                               <span className="text-[var(--fg)]">
-                                {formatCurrency(monthSpent)}
+                                {formatCurrency(ytdSpent)}
                               </span>
                             </div>
                             <div className="flex items-baseline justify-between gap-2 rounded-md border border-[var(--border)]/50 px-2.5 py-2">
-                              <span>Monthly share</span>
+                              <span>Monthly share of YTD</span>
                               <span className="text-[var(--fg)]">
                                 {formatCurrency(monthlyAllotment(ytdSpent))}
                               </span>
