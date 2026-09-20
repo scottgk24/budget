@@ -180,11 +180,10 @@ const VARIANCE_UNDER = "#7ec07a";
 const VARIANCE_GRID = "#2f5a3c";
 const VARIANCE_MUTED = "#8fb396";
 
-function sharePct(part: number, total: number) {
-  if (total <= 0) return 0;
-  return (part / total) * 100;
-}
-
+/**
+ * Dollars over / under budget per category (sorted by absolute overage).
+ * Replaces the old percentage-point share-mix chart.
+ */
 export function BudgetVarianceChart({
   data,
   emptyLabel = "Nothing to show yet",
@@ -194,12 +193,10 @@ export function BudgetVarianceChart({
   emptyLabel?: string;
   onSelect?: (row: BudgetVarianceRow) => void;
 }) {
-  const { formatCurrency } = useMoneyFormat();
+  const { formatCurrency, formatCompactCurrency } = useMoneyFormat();
   const usable = data.filter((d) => d.budget > 0 || d.spent > 0);
-  const totalBudget = usable.reduce((sum, d) => sum + d.budget, 0);
-  const totalSpent = usable.reduce((sum, d) => sum + d.spent, 0);
 
-  if (usable.length === 0 || (totalBudget <= 0 && totalSpent <= 0)) {
+  if (usable.length === 0) {
     return (
       <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
         {emptyLabel}
@@ -210,43 +207,29 @@ export function BudgetVarianceChart({
   const ranked = [...usable].sort(
     (a, b) => Math.max(b.budget, b.spent) - Math.max(a.budget, a.spent),
   );
-  const top = ranked.slice(0, 6);
-  const rest = ranked.slice(6);
-  const rows: Array<
-    BudgetVarianceRow & {
-      budgetShare: number;
-      spendShare: number;
-      variancePp: number;
-    }
-  > = [];
+  const top = ranked.slice(0, 8);
+  const rest = ranked.slice(8);
+  const rows: Array<BudgetVarianceRow & { variance: number }> = [];
   for (const row of top) {
-    const budgetShare = sharePct(row.budget, totalBudget);
-    const spendShare = sharePct(row.spent, totalSpent);
     rows.push({
       ...row,
-      budgetShare,
-      spendShare,
-      variancePp: spendShare - budgetShare,
+      variance: Math.round((row.spent - row.budget) * 100) / 100,
     });
   }
   if (rest.length > 0) {
     const budget = rest.reduce((sum, d) => sum + d.budget, 0);
     const spent = rest.reduce((sum, d) => sum + d.spent, 0);
-    const budgetShare = sharePct(budget, totalBudget);
-    const spendShare = sharePct(spent, totalSpent);
     rows.push({
       id: "__other__",
       name: "Other",
       budget,
       spent,
-      budgetShare,
-      spendShare,
-      variancePp: spendShare - budgetShare,
+      variance: Math.round((spent - budget) * 100) / 100,
     });
   }
 
-  rows.sort((a, b) => Math.abs(b.variancePp) - Math.abs(a.variancePp));
-  const maxAbs = Math.max(4, ...rows.map((r) => Math.abs(r.variancePp)));
+  rows.sort((a, b) => Math.abs(b.variance) - Math.abs(a.variance));
+  const maxAbs = Math.max(50, ...rows.map((r) => Math.abs(r.variance)));
   const interactive = Boolean(onSelect);
   const chartHeight = Math.max(240, rows.length * 40 + 40);
 
@@ -269,7 +252,7 @@ export function BudgetVarianceChart({
             tick={{ fill: VARIANCE_MUTED, fontSize: 11 }}
             tickLine={false}
             axisLine={{ stroke: VARIANCE_GRID }}
-            tickFormatter={(v: number) => `${v > 0 ? "+" : ""}${v.toFixed(0)} pp`}
+            tickFormatter={(v: number) => formatCompactCurrency(v)}
           />
           <YAxis
             type="category"
@@ -285,32 +268,28 @@ export function BudgetVarianceChart({
             content={({ active, payload }) => {
               if (!active || !payload?.length) return null;
               const row = payload[0].payload as (typeof rows)[number];
-              const sign = row.variancePp > 0 ? "+" : "";
+              const over = row.variance > 0;
               return (
                 <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm shadow-sm">
                   <p className="font-medium">{row.name}</p>
                   <p className="tabular-nums text-[var(--muted)]">
-                    Budget {formatCurrency(row.budget)} · {row.budgetShare.toFixed(0)}%
-                  </p>
-                  <p className="tabular-nums text-[var(--muted)]">
-                    Spent {formatCurrency(row.spent)} · {row.spendShare.toFixed(0)}%
+                    Budget {formatCurrency(row.budget)} · spent{" "}
+                    {formatCurrency(row.spent)}
                   </p>
                   <p
                     className="tabular-nums"
-                    style={{
-                      color: row.variancePp > 0 ? VARIANCE_OVER : VARIANCE_UNDER,
-                    }}
+                    style={{ color: over ? VARIANCE_OVER : VARIANCE_UNDER }}
                   >
-                    {sign}
-                    {row.variancePp.toFixed(1)} pp vs budget share
+                    {over ? "Over by " : "Under by "}
+                    {formatCurrency(Math.abs(row.variance))}
                   </p>
                 </div>
               );
             }}
           />
           <Bar
-            dataKey="variancePp"
-            name="Spend share − budget share"
+            dataKey="variance"
+            name="Over / under budget"
             maxBarSize={18}
             cursor={interactive ? "pointer" : undefined}
             onClick={(entry) => {
@@ -323,7 +302,7 @@ export function BudgetVarianceChart({
             {rows.map((row) => (
               <Cell
                 key={row.id}
-                fill={row.variancePp > 0 ? VARIANCE_OVER : VARIANCE_UNDER}
+                fill={row.variance > 0 ? VARIANCE_OVER : VARIANCE_UNDER}
                 cursor={interactive && row.id !== "__other__" ? "pointer" : undefined}
               />
             ))}

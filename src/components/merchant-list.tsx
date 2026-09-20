@@ -8,11 +8,18 @@ type MerchantRow = {
   amount: number;
   count: number;
   categoryName?: string | null;
+  fundKind?: "committed" | "flexible" | "reserve" | null;
 };
 
-function barColor(categoryName: string | null | undefined, colorByFlexibility: boolean): string {
-  if (!colorByFlexibility || !categoryName) return "bg-[var(--gold)]";
-  const kind = fundKindForSlug(defaultFundSlugForCategoryName(categoryName));
+function resolveKind(row: MerchantRow): string | null {
+  if (row.fundKind) return row.fundKind;
+  if (!row.categoryName) return null;
+  return fundKindForSlug(defaultFundSlugForCategoryName(row.categoryName));
+}
+
+function barColor(row: MerchantRow, colorByFlexibility: boolean): string {
+  if (!colorByFlexibility) return "bg-[var(--gold)]";
+  const kind = resolveKind(row);
   if (kind === "flexible") return "bg-[var(--flexible)]";
   if (kind === "committed") return "bg-[var(--olive)]";
   return "bg-[var(--gold)]";
@@ -59,7 +66,7 @@ export function MerchantList({
             </div>
             <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[var(--border)]/50">
               <div
-                className={`h-full rounded-full ${barColor(row.categoryName, colorByFlexibility)}`}
+                className={`h-full rounded-full ${barColor(row, colorByFlexibility)}`}
                 style={{ width: `${pct}%` }}
               />
             </div>

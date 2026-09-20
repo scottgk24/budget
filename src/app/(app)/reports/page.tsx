@@ -84,12 +84,14 @@ type ReportsData = {
     Reserves?: number;
     Fixed?: number;
     Discretionary?: number;
+    Income?: number;
   }>;
   merchants: Array<{
     merchant: string;
     amount: number;
     count: number;
     categoryName: string | null;
+    fundKind?: "committed" | "flexible" | "reserve" | null;
   }>;
   sankey: {
     nodes: Array<{ name: string }>;
@@ -101,6 +103,14 @@ type ReportsData = {
   };
   incomeBreakdown: Array<{ name: string; amount: number }>;
 };
+
+function PeriodChip({ label }: { label: string }) {
+  return (
+    <span className="ml-1.5 text-[11px] font-normal text-[var(--muted)]">
+      · {label}
+    </span>
+  );
+}
 
 export default function ReportsPage() {
   const { ledger, kind, isCurrent } = useLedgerGuard();
@@ -184,6 +194,22 @@ export default function ReportsPage() {
       ? view.categorySeries.byCategoryId[activeCategoryId]
       : undefined;
 
+  const spendSubtitle =
+    kind === "personal"
+      ? [
+          `Flexible ${formatCurrency(view?.totals.discretionary ?? 0)}`,
+          `committed ${formatCurrency(view?.totals.fixed ?? 0)}`,
+          view?.totals.reserve != null
+            ? `reserves ${formatCurrency(view.totals.reserve)}`
+            : null,
+          view?.totals.discretionaryShare != null
+            ? `${view.totals.discretionaryShare.toFixed(0)}% flexible`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : null;
+
   return (
     <div>
       <PageHeader
@@ -212,63 +238,32 @@ export default function ReportsPage() {
         <PageSkeleton label="Loading reports" />
       ) : (
         <>
-          <div
-            className={`grid gap-4 sm:grid-cols-2 ${
-              kind === "personal" && view.totals.reserve != null
-                ? "lg:grid-cols-3 xl:grid-cols-6"
-                : kind === "personal"
-                  ? "lg:grid-cols-5"
-                  : "lg:grid-cols-4"
-            }`}
-          >
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Card>
-              <p className="text-sm text-[var(--muted)]">{copy.income}</p>
+              <p className="text-sm text-[var(--muted)]">
+                {copy.income}
+                <PeriodChip label={rangeLabel} />
+              </p>
               <p className="mt-2 font-display text-2xl">
                 {formatCurrency(view.totals.income)}
               </p>
             </Card>
-            {kind === "personal" ? (
-              <>
-                <Card>
-                  <p className="text-sm text-[var(--muted)]">Flexible</p>
-                  <p className="mt-2 font-display text-2xl text-[var(--flexible)]">
-                    {formatCurrency(view.totals.discretionary)}
-                  </p>
-                  {view.totals.discretionaryShare != null ? (
-                    <p className="mt-1 text-xs text-[var(--muted)]">
-                      {view.totals.discretionaryShare.toFixed(0)}% of spend
-                    </p>
-                  ) : null}
-                </Card>
-                <Card>
-                  <p className="text-sm text-[var(--muted)]">Committed</p>
-                  <p className="mt-2 font-display text-2xl">
-                    {formatCurrency(view.totals.fixed)}
-                  </p>
-                </Card>
-                {view.totals.reserve != null ? (
-                  <Card>
-                    <p className="text-sm text-[var(--muted)]">Reserves</p>
-                    <p className="mt-2 font-display text-2xl">
-                      {formatCurrency(view.totals.reserve)}
-                    </p>
-                  </Card>
-                ) : null}
-              </>
-            ) : (
-              <Card>
-                <p className="text-sm text-[var(--muted)]">{copy.spend}</p>
-                <p className="mt-2 font-display text-2xl">
-                  {formatCurrency(view.totals.spend)}
-                </p>
-              </Card>
-            )}
+            <Card>
+              <p className="text-sm text-[var(--muted)]">
+                {copy.spend}
+                <PeriodChip label={rangeLabel} />
+              </p>
+              <p className="mt-2 font-display text-2xl">
+                {formatCurrency(view.totals.spend)}
+              </p>
+              {spendSubtitle ? (
+                <p className="mt-1 text-xs text-[var(--muted)]">{spendSubtitle}</p>
+              ) : null}
+            </Card>
             <Card>
               <p className="text-sm text-[var(--muted)]">
                 {copy.savings}
-                {view.totals.savingsRate != null
-                  ? copy.savingsRateSuffix(view.totals.savingsRate)
-                  : ""}
+                <PeriodChip label={rangeLabel} />
               </p>
               <p
                 className={`mt-2 font-display text-2xl ${
@@ -278,14 +273,22 @@ export default function ReportsPage() {
                 }`}
               >
                 {formatCurrency(view.totals.savings)}
+                {view.totals.savingsRate != null ? (
+                  <span className="ml-2 text-base font-sans font-normal text-[var(--muted)]">
+                    {view.totals.savingsRate.toFixed(0)}%
+                  </span>
+                ) : null}
               </p>
             </Card>
             <Card>
-              <p className="text-sm text-[var(--muted)]">Age of money</p>
+              <p className="text-sm text-[var(--muted)]">
+                Age of money
+                <PeriodChip label={rangeLabel} />
+              </p>
               <p className="mt-2 font-display text-2xl">
                 {view.ageOfMoney.ageDays == null
                   ? "—"
-                  : `${view.ageOfMoney.ageDays.toFixed(0)}d`}
+                  : `${view.ageOfMoney.ageDays.toFixed(0)} days`}
               </p>
               <p className="mt-1 text-xs text-[var(--muted)]">
                 Avg days between earning and spending
@@ -309,6 +312,7 @@ export default function ReportsPage() {
               {kind === "personal"
                 ? `Income → committed / flexible / reserves → categories. Overspend is drawn from ${copy.savings.toLowerCase()}.`
                 : `${copy.income} into categories; spending above ${copy.income.toLowerCase()} is drawn from ${copy.savings.toLowerCase()}`}
+              <PeriodChip label={rangeLabel} />
             </p>
             {loading ? chartFallback : (
               <CashFlowSankey
@@ -346,9 +350,10 @@ export default function ReportsPage() {
 
           {kind === "personal" ? (
             <Card className="mt-6">
-              <h2 className="mb-1 font-display text-lg">Committed, flexible & reserves</h2>
+              <h2 className="mb-1 font-display text-lg">Monthly cash flow</h2>
               <p className="mb-4 text-sm text-[var(--muted)]">
-                Flexible is this month’s choices. Reserves are sinking funds (home, travel, gifts).
+                Stacked spend by fund with income overlaid
+                <PeriodChip label={rangeLabel} />
               </p>
               {loading ? chartFallback : (
                 <FlexibilityTrendsChart
@@ -371,6 +376,47 @@ export default function ReportsPage() {
               )}
             </Card>
           ) : null}
+
+          <Card className="mt-6">
+            <h2 className="mb-1 font-display text-lg">
+              {kind === "personal"
+                ? "Flexible by category"
+                : "Spending by category"}
+            </h2>
+            <p className="mb-4 text-sm text-[var(--muted)]">
+              {kind === "personal"
+                ? "Month-over-month trends for controllable spending"
+                : "Month-over-month trends for top categories"}
+            </p>
+            {loading ? chartFallback : (
+              <CategoryTrendsChart
+                data={view.categoryTrends.months}
+                keys={view.categoryTrends.keys}
+                onSelect={({ monthKey, categoryName }) => {
+                  if (categoryName === "All other") {
+                    setBreakdown({
+                      type: "period",
+                      periodKey: monthKey,
+                      granularity: "monthly",
+                      flexibility:
+                        kind === "personal" ? "discretionary" : undefined,
+                      title: "All other",
+                    });
+                    return;
+                  }
+                  const { start, end } = monthRange(monthKey);
+                  setBreakdown({
+                    type: "transactions",
+                    title: categoryName,
+                    subtitle: formatMonthLabel(monthKey),
+                    from: toDateParam(start),
+                    to: toDateParam(end),
+                    categoryName,
+                  });
+                }}
+              />
+            )}
+          </Card>
 
           <Card className="mt-6">
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
@@ -418,47 +464,6 @@ export default function ReportsPage() {
             )}
           </Card>
 
-          <Card className="mt-6">
-            <h2 className="mb-1 font-display text-lg">
-              {kind === "personal"
-                ? "Flexible by category"
-                : "Spending by category"}
-            </h2>
-            <p className="mb-4 text-sm text-[var(--muted)]">
-              {kind === "personal"
-                ? "Month-over-month trends for controllable spending"
-                : "Month-over-month trends for top categories"}
-            </p>
-            {loading ? chartFallback : (
-              <CategoryTrendsChart
-                data={view.categoryTrends.months}
-                keys={view.categoryTrends.keys}
-                onSelect={({ monthKey, categoryName }) => {
-                  if (categoryName === "All other") {
-                    setBreakdown({
-                      type: "period",
-                      periodKey: monthKey,
-                      granularity: "monthly",
-                      flexibility:
-                        kind === "personal" ? "discretionary" : undefined,
-                      title: "All other",
-                    });
-                    return;
-                  }
-                  const { start, end } = monthRange(monthKey);
-                  setBreakdown({
-                    type: "transactions",
-                    title: categoryName,
-                    subtitle: formatMonthLabel(monthKey),
-                    from: toDateParam(start),
-                    to: toDateParam(end),
-                    categoryName,
-                  });
-                }}
-              />
-            )}
-          </Card>
-
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
             <Card>
               <h2 className="mb-1 font-display text-lg">Top merchants</h2>
@@ -488,7 +493,8 @@ export default function ReportsPage() {
             <Card>
               <h2 className="mb-1 font-display text-lg">Age of money</h2>
               <p className="mb-4 text-sm text-[var(--muted)]">
-                Higher means a larger buffer between paychecks and spending
+                Buffer between paychecks and spending
+                <PeriodChip label={rangeLabel} />
               </p>
               {loading ? chartFallback : (
                 <AgeOfMoneyChart series={view.ageOfMoney.series} />
@@ -498,7 +504,10 @@ export default function ReportsPage() {
 
           {view.incomeBreakdown.length > 0 ? (
             <Card className="mt-6">
-              <h2 className="mb-4 font-display text-lg">Income sources</h2>
+              <h2 className="mb-4 font-display text-lg">
+                Income sources
+                <PeriodChip label={rangeLabel} />
+              </h2>
               <ul className="divide-y divide-[var(--border)]">
                 {view.incomeBreakdown.map((row) => (
                   <li

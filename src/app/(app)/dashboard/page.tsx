@@ -4,22 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useLedgerGuard } from "@/components/ledger-context";
-import type { MetricsPoint } from "@/components/metrics-charts";
-import { PeriodDrilldown } from "@/components/period-drilldown";
 import { useMoneyFormat } from "@/components/privacy-context";
 import { useAppBasePath } from "@/components/use-app-base-path";
 import { PageSkeleton } from "@/components/page-skeleton";
-import { Button, Card, EmptyState, PageHeader, Select } from "@/components/ui";
-import { isCurrencyHolding } from "@/lib/holdings";
-import {
-  formatDate,
-  formatMonthLabel,
-  METRICS_RANGES,
-  monthKey,
-  type MetricsGranularity,
-  type MetricsRangeId,
-  parseMetricsRangeId,
-} from "@/lib/format";
+import { Card, EmptyState, PageHeader } from "@/components/ui";
+import { formatDate, formatMonthLabel, monthKey } from "@/lib/format";
 import { ledgerCopy, ledgerLabel } from "@/lib/ledger-copy";
 
 const chartFallback = (
@@ -28,25 +17,8 @@ const chartFallback = (
   </p>
 );
 
-const SpendIncomeChart = dynamic(
-  () =>
-    import("@/components/metrics-charts").then((m) => m.SpendIncomeChart),
-  { ssr: false, loading: () => chartFallback },
-);
-const SavingsChart = dynamic(
-  () => import("@/components/metrics-charts").then((m) => m.SavingsChart),
-  { ssr: false, loading: () => chartFallback },
-);
-const BalanceChart = dynamic(
-  () => import("@/components/metrics-charts").then((m) => m.BalanceChart),
-  { ssr: false, loading: () => chartFallback },
-);
 const SpendPaceChart = dynamic(
   () => import("@/components/report-charts").then((m) => m.SpendPaceChart),
-  { ssr: false, loading: () => chartFallback },
-);
-const CategoryPieChart = dynamic(
-  () => import("@/components/budget-charts").then((m) => m.CategoryPieChart),
   { ssr: false, loading: () => chartFallback },
 );
 
@@ -87,13 +59,6 @@ type DashboardData = {
     flexibility?: "fixed" | "discretionary" | null;
     fundKind?: "committed" | "flexible" | "reserve" | null;
   }>;
-  holdings: Array<{
-    id: string;
-    name: string;
-    symbol: string | null;
-    value: number | null;
-    quantity: number;
-  }>;
   spendPace?: {
     series: Array<{
       day: number;
@@ -111,35 +76,6 @@ type DashboardData = {
   spendPaceScope?: "all" | "discretionary";
 };
 
-type MetricsData = {
-  granularity: MetricsGranularity;
-  range: MetricsRangeId;
-  series: MetricsPoint[];
-  totals: {
-    spend: number;
-    fixedSpend?: number;
-    discretionarySpend?: number;
-    income: number;
-    savings: number;
-    savingsRate: number | null;
-    balance?: number;
-    reserveSpend?: number;
-  };
-  topMerchants?: Array<{
-    merchant: string;
-    amount: number;
-    count: number;
-    categoryName: string | null;
-  }>;
-};
-
-const PERIODS: Array<{ id: MetricsGranularity; label: string }> = [
-  { id: "daily", label: "Daily" },
-  { id: "weekly", label: "Weekly" },
-  { id: "monthly", label: "Monthly" },
-  { id: "yearly", label: "Yearly" },
-];
-
 export default function DashboardPage() {
   const { ledger, kind, isCurrent } = useLedgerGuard();
   const { href: appHref } = useAppBasePath();
@@ -147,11 +83,6 @@ export default function DashboardPage() {
   const { formatCurrency, formatSignedCurrency } = useMoneyFormat();
   const [data, setData] = useState<DashboardData | null>(null);
   const [dataLedger, setDataLedger] = useState<string | null>(null);
-  const [metrics, setMetrics] = useState<MetricsData | null>(null);
-  const [metricsLedger, setMetricsLedger] = useState<string | null>(null);
-  const [granularity, setGranularity] = useState<MetricsGranularity>("monthly");
-  const [rangeId, setRangeId] = useState<MetricsRangeId>("3m");
-  const [selectedPeriodKey, setSelectedPeriodKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -170,53 +101,20 @@ export default function DashboardPage() {
     }
   }, [ledger, isCurrent]);
 
-  const loadMetrics = useCallback(async () => {
-    const requested = ledger;
-    try {
-      const res = await fetch(
-        `/api/metrics?ledger=${requested}&granularity=${granularity}&range=${rangeId}`,
-      );
-      const json = await res.json();
-      if (!isCurrent(requested)) return;
-      if (!res.ok) throw new Error(json.error ?? "Failed to load metrics");
-      setMetrics(json);
-      setMetricsLedger(requested);
-    } catch (err) {
-      if (!isCurrent(requested)) return;
-      setError(err instanceof Error ? err.message : "Failed to load metrics");
-    }
-  }, [ledger, granularity, rangeId, isCurrent]);
-
   useEffect(() => {
     void load();
   }, [load]);
 
-  useEffect(() => {
-    void loadMetrics();
-  }, [loadMetrics]);
-
-  useEffect(() => {
-    setSelectedPeriodKey(null);
-  }, [granularity, rangeId]);
-
   const view = dataLedger === ledger ? data : null;
-  const metricsView = metricsLedger === ledger ? metrics : null;
   const remaining =
     view && view.budgetTotal > 0 ? view.budgetTotal - view.spent : null;
-  const rangeLabel =
-    METRICS_RANGES.find((r) => r.id === rangeId)?.label ?? "3 months";
-  const bucketLabel =
-    PERIODS.find((p) => p.id === granularity)?.label.toLowerCase() ?? "month";
-
-  function selectPeriod(point: MetricsPoint) {
-    setSelectedPeriodKey(point.key);
-  }
+  const monthLabel = formatMonthLabel(monthKey());
 
   return (
     <div>
       <PageHeader
         title={copy.dashboardTitle}
-        description={`${ledgerLabel(ledger)} · ${formatMonthLabel(monthKey())}`}
+        description={`${ledgerLabel(ledger)} · ${monthLabel}`}
       />
 
       {error ? (
@@ -244,7 +142,12 @@ export default function DashboardPage() {
             <div className="grid gap-4 sm:grid-cols-3">
               <Card>
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm text-[var(--muted)]">Net worth</p>
+                  <p className="text-sm text-[var(--muted)]">
+                    Net worth
+                    <span className="ml-1.5 text-[11px] font-normal text-[var(--muted)]">
+                      · {monthLabel}
+                    </span>
+                  </p>
                   <Link
                     href={appHref("/investments")}
                     className="text-xs text-[var(--accent)]"
@@ -285,8 +188,10 @@ export default function DashboardPage() {
           ) : null}
 
           <div
-            className={`grid gap-4 sm:grid-cols-2 lg:grid-cols-3 ${
-              kind === "personal" ? "mt-4" : ""
+            className={`grid gap-4 ${
+              kind === "personal"
+                ? "mt-4 sm:grid-cols-2"
+                : "sm:grid-cols-2 lg:grid-cols-3"
             }`}
           >
             {ledger === "business" ? (
@@ -317,55 +222,26 @@ export default function DashboardPage() {
                     {formatCurrency(view.cashBalance ?? view.totalBalance)}
                   </p>
                 </Card>
+                <Card>
+                  <p className="text-sm text-[var(--muted)]">{copy.spentThisMonth}</p>
+                  <p className="mt-2 font-display text-2xl">
+                    {formatCurrency(view.spent)}
+                  </p>
+                </Card>
               </>
             ) : null}
-            <Card>
-              <p className="text-sm text-[var(--muted)]">
-                {kind === "personal" ? "Flexible" : copy.spentThisMonth}
-              </p>
-              <p className="mt-2 font-display text-2xl">
-                {formatCurrency(
-                  kind === "personal"
-                    ? (view.discretionarySpend ?? view.spent)
-                    : view.spent,
-                )}
-              </p>
-              {kind === "personal" && view.fixedSpend != null ? (
-                <p className="mt-1 text-xs text-[var(--muted)]">
-                  Committed {formatCurrency(view.fixedSpend)}
-                  {view.reserveSpend
-                    ? ` · reserves ${formatCurrency(view.reserveSpend)}`
-                    : ""}
-                  {" · total "}
-                  {formatCurrency(view.spent)}
-                </p>
-              ) : null}
-            </Card>
-            <Card>
-              <p className="text-sm text-[var(--muted)]">{copy.incomeThisMonth}</p>
-              <p className="mt-2 font-display text-2xl">
-                {formatCurrency(view.income)}
-              </p>
-              {kind === "personal" && view.incomeIncomplete ? (
-                <p className="mt-1 text-xs text-[var(--muted)]">
-                  Month incomplete — posted income is below the recent
-                  {view.trailingIncomeAverage
-                    ? ` ${formatCurrency(view.trailingIncomeAverage)}/mo`
-                    : ""}{" "}
-                  average. Another paycheck may still land.
-                </p>
-              ) : null}
-            </Card>
-            <Card>
+
+            <Card className={kind === "personal" ? "sm:col-span-1 ring-1 ring-[var(--accent)]/25" : undefined}>
               <p className="text-sm text-[var(--muted)]">
                 {kind === "personal" && view.spendPace?.freeToSpend != null
                   ? "Flexible left"
                   : view.spendPace?.freeToSpend != null
                     ? "Free to spend"
                     : copy.budgetRemaining}
+                <span className="ml-1.5 text-[11px] font-normal">· {monthLabel}</span>
               </p>
               <p
-                className={`mt-2 font-display text-2xl ${
+                className={`mt-2 font-display text-3xl ${
                   (view.flexibleOverspend ?? 0) > 0 ? "text-[var(--danger)]" : ""
                 }`}
               >
@@ -392,6 +268,39 @@ export default function DashboardPage() {
                   pace by {formatCurrency(Math.abs(view.spendPace.paceDelta))}
                 </p>
               ) : null}
+              {kind === "personal" && view.fixedSpend != null ? (
+                <p className="mt-2 text-xs text-[var(--muted)]">
+                  Spent this month {formatCurrency(view.spent)}
+                  {view.discretionarySpend != null
+                    ? ` · flexible ${formatCurrency(view.discretionarySpend)}`
+                    : ""}
+                  {view.fixedSpend
+                    ? ` · committed ${formatCurrency(view.fixedSpend)}`
+                    : ""}
+                  {view.reserveSpend
+                    ? ` · reserves ${formatCurrency(view.reserveSpend)}`
+                    : ""}
+                </p>
+              ) : null}
+            </Card>
+
+            <Card>
+              <p className="text-sm text-[var(--muted)]">
+                {copy.incomeThisMonth}
+                <span className="ml-1.5 text-[11px] font-normal">· {monthLabel}</span>
+              </p>
+              <p className="mt-2 font-display text-2xl">
+                {formatCurrency(view.income)}
+              </p>
+              {kind === "personal" && view.incomeIncomplete ? (
+                <p className="mt-1 text-xs text-[var(--muted)]">
+                  Month incomplete — posted income is below the recent
+                  {view.trailingIncomeAverage
+                    ? ` ${formatCurrency(view.trailingIncomeAverage)}/mo`
+                    : ""}{" "}
+                  average. Another paycheck may still land.
+                </p>
+              ) : null}
             </Card>
           </div>
 
@@ -413,6 +322,9 @@ export default function DashboardPage() {
                       : "Actual cumulative spend vs ideal burn through the month"}
                   </p>
                 </div>
+                <Link href={appHref("/reports")} className="text-sm text-[var(--accent)]">
+                  Trends in Reports →
+                </Link>
               </div>
               <SpendPaceChart
                 data={view.spendPace.series}
@@ -423,245 +335,23 @@ export default function DashboardPage() {
                 }
               />
             </Card>
-          ) : null}
+          ) : (
+            <p className="mt-4 text-sm text-[var(--muted)]">
+              <Link href={appHref("/reports")} className="text-[var(--accent)]">
+                Open Reports
+              </Link>{" "}
+              for range trends and cash flow.
+            </p>
+          )}
 
-          <section className="mt-8">
-            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <h2 className="font-display text-xl">
-                  {copy.chartsSection}
-                </h2>
-                <p className="mt-0.5 text-sm text-[var(--muted)]">
-                  {rangeLabel} · {bucketLabel}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Select
-                  aria-label="Chart timespan"
-                  value={rangeId}
-                  onChange={(e) => setRangeId(parseMetricsRangeId(e.target.value))}
-                  className="py-1.5"
-                >
-                  {METRICS_RANGES.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.label}
-                    </option>
-                  ))}
-                </Select>
-                <div className="flex rounded-lg border border-[var(--border)] bg-[var(--surface)] p-0.5">
-                  {PERIODS.map((p) => (
-                    <Button
-                      key={p.id}
-                      type="button"
-                      variant={granularity === p.id ? "primary" : "ghost"}
-                      className="px-3 py-1.5 text-xs"
-                      onClick={() => setGranularity(p.id)}
-                    >
-                      {p.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div
-              className={`mb-4 grid gap-4 ${
-                kind === "personal" ? "sm:grid-cols-2 lg:grid-cols-5" : "sm:grid-cols-3"
-              }`}
-            >
-              {kind === "personal" ? (
-                <>
-                  <Card>
-                    <p className="text-sm text-[var(--muted)]">Flexible</p>
-                    <p className="mt-2 font-display text-xl text-[var(--flexible)]">
-                      {!metricsView
-                        ? "…"
-                        : formatCurrency(metricsView?.totals.discretionarySpend ?? 0)}
-                    </p>
-                  </Card>
-                  <Card>
-                    <p className="text-sm text-[var(--muted)]">Committed</p>
-                    <p className="mt-2 font-display text-xl">
-                      {!metricsView
-                        ? "…"
-                        : formatCurrency(metricsView?.totals.fixedSpend ?? 0)}
-                    </p>
-                  </Card>
-                  <Card>
-                    <p className="text-sm text-[var(--muted)]">Reserves</p>
-                    <p className="mt-2 font-display text-xl">
-                      {!metricsView
-                        ? "…"
-                        : formatCurrency(metricsView?.totals.reserveSpend ?? 0)}
-                    </p>
-                  </Card>
-                </>
-              ) : (
-                <Card>
-                  <p className="text-sm text-[var(--muted)]">{copy.spend}</p>
-                  <p className="mt-2 font-display text-xl">
-                    {!metricsView
-                      ? "…"
-                      : formatCurrency(metricsView?.totals.spend ?? 0)}
-                  </p>
-                </Card>
-              )}
-              <Card>
-                <p className="text-sm text-[var(--muted)]">{copy.income}</p>
-                <p className="mt-2 font-display text-xl">
-                  {!metricsView
-                    ? "…"
-                    : formatCurrency(metricsView?.totals.income ?? 0)}
-                </p>
-              </Card>
-              <Card>
-                <p className="text-sm text-[var(--muted)]">
-                  {copy.savings}
-                  {metricsView?.totals.savingsRate != null
-                    ? copy.savingsRateSuffix(metricsView.totals.savingsRate)
-                    : ""}
-                </p>
-                <p
-                  className={`mt-2 font-display text-xl ${
-                    (metricsView?.totals.savings ?? 0) >= 0
-                      ? "text-[var(--positive)]"
-                      : "text-[var(--danger)]"
-                  }`}
-                >
-                  {!metricsView
-                    ? "…"
-                    : formatCurrency(metricsView?.totals.savings ?? 0)}
-                </p>
-              </Card>
-            </div>
-
-            <div className="grid gap-6 lg:grid-cols-2">
-              <Card>
-                <h3 className="mb-3 font-display text-lg">
-                  {kind === "personal"
-                    ? "Income vs committed, flexible & reserves"
-                    : copy.incomeVsSpend}
-                </h3>
-                {!metricsView ? (
-                  <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
-                    Loading charts…
-                  </p>
-                ) : (
-                  <SpendIncomeChart
-                    data={metricsView?.series ?? []}
-                    onSelectPeriod={selectPeriod}
-                    selectedKey={selectedPeriodKey}
-                    incomeLabel={copy.income}
-                    spendLabel={copy.spend}
-                    splitSpend={kind === "personal"}
-                  />
-                )}
-              </Card>
-              <Card>
-                <h3 className="mb-3 font-display text-lg">
-                  {copy.netSavings}
-                </h3>
-                {!metricsView ? (
-                  <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
-                    Loading charts…
-                  </p>
-                ) : (
-                  <SavingsChart
-                    data={metricsView?.series ?? []}
-                    onSelectPeriod={selectPeriod}
-                    selectedKey={selectedPeriodKey}
-                    savingsLabel={copy.savings}
-                    emptyLabel={copy.noSavingsData}
-                  />
-                )}
-              </Card>
-            </div>
-
-            <Card className="mt-6">
-              <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
-                <div>
-                  <h3 className="font-display text-lg">
-                    {copy.accountBalance}
-                  </h3>
-                  <p className="mt-1 text-xs text-[var(--muted)]">
-                    Estimated from today’s balances and posted transactions
-                  </p>
-                </div>
-                <p className="text-sm tabular-nums text-[var(--muted)]">
-                  Now{" "}
-                  {!metricsView
-                    ? "…"
-                    : formatCurrency(metricsView?.totals.balance ?? view.totalBalance)}
-                </p>
-              </div>
-              {!metricsView ? (
-                <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
-                  Loading charts…
-                </p>
-              ) : (
-                <BalanceChart
-                  data={metricsView?.series ?? []}
-                  onSelectPeriod={selectPeriod}
-                  selectedKey={selectedPeriodKey}
-                />
-              )}
-            </Card>
-          </section>
-
-          <PeriodDrilldown
-            open={selectedPeriodKey != null}
-            onClose={() => setSelectedPeriodKey(null)}
-            ledger={ledger}
-            granularity={granularity}
-            periodKey={selectedPeriodKey}
-          />
-
-          <div
-            className={`mt-8 grid gap-6 ${
-              kind === "personal" && (metricsView?.topMerchants?.length ?? 0) > 0
-                ? "lg:grid-cols-3"
-                : "lg:grid-cols-2"
-            }`}
-          >
-            {kind === "personal" && (metricsView?.topMerchants?.length ?? 0) > 0 ? (
-              <Card>
-                <div className="mb-4 flex items-center justify-between">
-                  <h2 className="font-display text-lg">Top merchants</h2>
-                  <Link href={appHref("/reports")} className="text-sm text-[var(--accent)]">
-                    Reports
-                  </Link>
-                </div>
-                <p className="mb-3 text-sm text-[var(--muted)]">
-                  {rangeLabel}
-                </p>
-                <ul className="space-y-3">
-                  {metricsView!.topMerchants!.map((row) => (
-                    <li key={row.merchant}>
-                      <Link
-                        href={appHref(
-                          `/transactions?merchant=${encodeURIComponent(row.merchant)}`,
-                        )}
-                        className="flex items-center justify-between text-sm hover:text-[var(--accent)]"
-                      >
-                        <span>
-                          {row.merchant}
-                          <span className="ml-1.5 text-[11px] text-[var(--muted)]">
-                            {row.count} tx
-                          </span>
-                        </span>
-                        <span className="tabular-nums text-[var(--muted)]">
-                          {formatCurrency(row.amount)}
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </Card>
-            ) : null}
+          <div className="mt-8 grid gap-6 lg:grid-cols-2">
             <Card>
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="font-display text-lg">
                   {copy.topCategories}
+                  <span className="ml-2 text-sm font-sans font-normal text-[var(--muted)]">
+                    · {monthLabel}
+                  </span>
                 </h2>
                 <Link href={appHref("/budgets")} className="text-sm text-[var(--accent)]">
                   {copy.budgetsLink}
@@ -691,7 +381,7 @@ export default function DashboardPage() {
                             {row.fundKind && kind === "personal" ? (
                               <span className="ml-1.5 text-[11px] text-[var(--muted)]">
                                 {row.fundKind === "flexible"
-                                  ? "flex"
+                                  ? "flexible"
                                   : row.fundKind === "reserve"
                                     ? "reserve"
                                     : "committed"}
@@ -699,13 +389,13 @@ export default function DashboardPage() {
                             ) : null}
                             {annual ? (
                               <span className="ml-1.5 text-[11px] text-[var(--muted)]">
-                                YTD
+                                so far this year
                               </span>
                             ) : null}
                           </span>
                           <span className="text-[var(--muted)]">
                             {annual
-                              ? `YTD ${formatCurrency(row.spent)}${
+                              ? `${formatCurrency(row.spent)}${
                                   row.budget != null
                                     ? ` / ${formatCurrency(row.budget)}/yr`
                                     : ""
@@ -767,55 +457,6 @@ export default function DashboardPage() {
               )}
             </Card>
           </div>
-
-          {view.holdings.length > 0 ? (
-            <div className="mt-6 grid gap-6 lg:grid-cols-2">
-              <Card>
-                <div className="mb-4 flex items-center justify-between">
-                  <h2 className="font-display text-lg">
-                    {copy.holdings}
-                  </h2>
-                  <Link href={appHref("/investments")} className="text-sm text-[var(--accent)]">
-                    All
-                  </Link>
-                </div>
-                <ul className="divide-y divide-[var(--border)]">
-                  {view.holdings.map((h) => (
-                    <li key={h.id} className="flex items-center justify-between py-3 text-sm">
-                      <div>
-                        <p className="font-medium">
-                          {h.symbol ? `${h.symbol} · ` : ""}
-                          {h.name}
-                        </p>
-                        <p className="text-[var(--muted)]">
-                          {isCurrencyHolding(h)
-                            ? "Cash"
-                            : `${h.quantity} shares`}
-                        </p>
-                      </div>
-                      <span>{h.value != null ? formatCurrency(h.value) : "—"}</span>
-                    </li>
-                  ))}
-                </ul>
-              </Card>
-              <Card>
-                <h2 className="mb-1 font-display text-lg">Allocation</h2>
-                <p className="mb-4 text-sm text-[var(--muted)]">
-                  Portfolio mix by holding value
-                </p>
-                <CategoryPieChart
-                  data={view.holdings
-                    .filter((h) => (h.value ?? 0) > 0)
-                    .map((h) => ({
-                      id: h.id,
-                      name: h.symbol || h.name,
-                      value: h.value ?? 0,
-                    }))}
-                  emptyLabel="No holding values yet"
-                />
-              </Card>
-            </div>
-          ) : null}
         </>
       )}
     </div>
