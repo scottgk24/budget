@@ -1,13 +1,13 @@
 "use client";
 
 import {
-  Bar,
-  BarChart,
   CartesianGrid,
   Cell,
+  Legend,
+  Line,
+  LineChart,
   Pie,
   PieChart,
-  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -168,146 +168,167 @@ export function CategoryPieChart({
   );
 }
 
-export type BudgetVarianceRow = {
-  id: string;
-  name: string;
-  budget: number;
-  spent: number;
+const TREND = {
+  spent: "#d4a857",
+  budget: "#8fb396",
+  average: "#7a9a6a",
+  grid: "#2f5a3c",
+  muted: "#8fb396",
+} as const;
+
+const LINE_CURSOR = {
+  stroke: TREND.muted,
+  strokeWidth: 1,
+  strokeDasharray: "3 3",
+  strokeOpacity: 0.55,
 };
 
-const VARIANCE_OVER = "#d4655a";
-const VARIANCE_UNDER = "#7ec07a";
-const VARIANCE_GRID = "#2f5a3c";
-const VARIANCE_MUTED = "#8fb396";
+export type BudgetTrendPoint = {
+  key: string;
+  label: string;
+  spent: number;
+  budget: number;
+  average: number;
+};
 
 /**
- * Dollars over / under budget per category (sorted by absolute overage).
- * Replaces the old percentage-point share-mix chart.
+ * Monthly spend vs budget allotment and average — restores the prior
+ * actual-vs-pace trend pattern on Budgets (line chart, not over/under bars).
  */
-export function BudgetVarianceChart({
+export function BudgetSpendTrendChart({
   data,
   emptyLabel = "Nothing to show yet",
   onSelect,
 }: {
-  data: BudgetVarianceRow[];
+  data: BudgetTrendPoint[];
   emptyLabel?: string;
-  onSelect?: (row: BudgetVarianceRow) => void;
+  onSelect?: (point: BudgetTrendPoint) => void;
 }) {
-  const { formatCurrency, formatCompactCurrency } = useMoneyFormat();
-  const usable = data.filter((d) => d.budget > 0 || d.spent > 0);
+  const { formatCompactCurrency, formatCurrency } = useMoneyFormat();
+  const hasData = data.some((d) => d.spent !== 0 || d.budget !== 0);
 
-  if (usable.length === 0) {
+  if (!hasData) {
     return (
-      <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
+      <p className="flex h-72 items-center justify-center text-sm text-[var(--muted)]">
         {emptyLabel}
       </p>
     );
   }
 
-  const ranked = [...usable].sort(
-    (a, b) => Math.max(b.budget, b.spent) - Math.max(a.budget, a.spent),
-  );
-  const top = ranked.slice(0, 8);
-  const rest = ranked.slice(8);
-  const rows: Array<BudgetVarianceRow & { variance: number }> = [];
-  for (const row of top) {
-    rows.push({
-      ...row,
-      variance: Math.round((row.spent - row.budget) * 100) / 100,
-    });
-  }
-  if (rest.length > 0) {
-    const budget = rest.reduce((sum, d) => sum + d.budget, 0);
-    const spent = rest.reduce((sum, d) => sum + d.spent, 0);
-    rows.push({
-      id: "__other__",
-      name: "Other",
-      budget,
-      spent,
-      variance: Math.round((spent - budget) * 100) / 100,
-    });
-  }
-
-  rows.sort((a, b) => Math.abs(b.variance) - Math.abs(a.variance));
-  const maxAbs = Math.max(50, ...rows.map((r) => Math.abs(r.variance)));
   const interactive = Boolean(onSelect);
-  const chartHeight = Math.max(240, rows.length * 40 + 40);
+
+  function handleClick(state: {
+    activeIndex?: number | string | null;
+    activeLabel?: string | number;
+  }) {
+    if (!onSelect) return;
+    const raw = state.activeIndex;
+    const index =
+      typeof raw === "number"
+        ? raw
+        : typeof raw === "string" && /^\d+$/.test(raw)
+          ? Number(raw)
+          : -1;
+    if (index >= 0 && data[index]) {
+      onSelect(data[index]);
+      return;
+    }
+    if (state.activeLabel != null) {
+      const byLabel = data.find((d) => d.label === String(state.activeLabel));
+      if (byLabel) onSelect(byLabel);
+    }
+  }
 
   return (
-    <div className="w-full" style={{ height: chartHeight }}>
+    <div className={`h-72 w-full ${interactive ? "cursor-pointer" : ""}`}>
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart
-          data={rows}
-          layout="vertical"
-          margin={{ top: 4, right: 16, left: 4, bottom: 4 }}
+        <LineChart
+          data={data}
+          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+          onClick={handleClick}
         >
-          <CartesianGrid
-            stroke={VARIANCE_GRID}
-            strokeDasharray="3 3"
-            horizontal={false}
-          />
+          <CartesianGrid stroke={TREND.grid} strokeDasharray="3 3" vertical={false} />
           <XAxis
-            type="number"
-            domain={[-maxAbs, maxAbs]}
-            tick={{ fill: VARIANCE_MUTED, fontSize: 11 }}
+            dataKey="label"
+            tick={{ fill: TREND.muted, fontSize: 11 }}
             tickLine={false}
-            axisLine={{ stroke: VARIANCE_GRID }}
-            tickFormatter={(v: number) => formatCompactCurrency(v)}
+            axisLine={{ stroke: TREND.grid }}
+            interval="preserveStartEnd"
+            minTickGap={28}
           />
           <YAxis
-            type="category"
-            dataKey="name"
-            width={108}
-            tick={{ fill: VARIANCE_MUTED, fontSize: 11 }}
+            tick={{ fill: TREND.muted, fontSize: 11 }}
             tickLine={false}
             axisLine={false}
+            tickFormatter={formatCompactCurrency}
+            width={48}
           />
-          <ReferenceLine x={0} stroke={VARIANCE_MUTED} strokeOpacity={0.45} />
           <Tooltip
-            cursor={{ fill: "rgba(238, 245, 234, 0.04)" }}
-            content={({ active, payload }) => {
+            cursor={LINE_CURSOR}
+            content={({ active, payload, label }) => {
               if (!active || !payload?.length) return null;
-              const row = payload[0].payload as (typeof rows)[number];
-              const over = row.variance > 0;
+              const rows = payload.filter(
+                (p) =>
+                  p.value != null &&
+                  p.name !== "Average" &&
+                  !(typeof p.value === "number" && Math.abs(p.value) < 0.005),
+              );
+              if (rows.length === 0) return null;
               return (
                 <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm shadow-sm">
-                  <p className="font-medium">{row.name}</p>
-                  <p className="tabular-nums text-[var(--muted)]">
-                    Budget {formatCurrency(row.budget)} · spent{" "}
-                    {formatCurrency(row.spent)}
-                  </p>
-                  <p
-                    className="tabular-nums"
-                    style={{ color: over ? VARIANCE_OVER : VARIANCE_UNDER }}
-                  >
-                    {over ? "Over by " : "Under by "}
-                    {formatCurrency(Math.abs(row.variance))}
-                  </p>
+                  <p className="mb-1 font-medium">{label}</p>
+                  {rows.map((p) => (
+                    <p
+                      key={String(p.name)}
+                      style={{ color: p.color }}
+                      className="tabular-nums"
+                    >
+                      {p.name}: {formatCurrency(p.value as number)}
+                    </p>
+                  ))}
                 </div>
               );
             }}
           />
-          <Bar
-            dataKey="variance"
-            name="Over / under budget"
-            maxBarSize={18}
-            cursor={interactive ? "pointer" : undefined}
-            onClick={(entry) => {
-              if (!onSelect) return;
-              const row = (entry as { payload?: BudgetVarianceRow }).payload;
-              if (!row || row.id === "__other__") return;
-              onSelect(row);
-            }}
-          >
-            {rows.map((row) => (
-              <Cell
-                key={row.id}
-                fill={row.variance > 0 ? VARIANCE_OVER : VARIANCE_UNDER}
-                cursor={interactive && row.id !== "__other__" ? "pointer" : undefined}
-              />
-            ))}
-          </Bar>
-        </BarChart>
+          <Legend
+            wrapperStyle={{ fontSize: 12, color: TREND.muted, paddingTop: 8 }}
+          />
+          <Line
+            type="monotone"
+            dataKey="budget"
+            name="Budget"
+            stroke={TREND.budget}
+            strokeDasharray="6 4"
+            strokeWidth={2}
+            dot={false}
+            connectNulls
+            activeDot={false}
+          />
+          {data.some((d) => d.average > 0) ? (
+            <Line
+              type="monotone"
+              dataKey="average"
+              name="Average"
+              stroke={TREND.average}
+              strokeDasharray="4 4"
+              strokeWidth={1.5}
+              strokeOpacity={0.85}
+              dot={false}
+              activeDot={false}
+              legendType="plainline"
+            />
+          ) : null}
+          <Line
+            type="monotone"
+            dataKey="spent"
+            name="Actual spend"
+            stroke={TREND.spent}
+            strokeWidth={2.5}
+            dot={{ r: 3, strokeWidth: 0, fill: TREND.spent }}
+            connectNulls
+            activeDot={{ r: 5, strokeWidth: 0 }}
+          />
+        </LineChart>
       </ResponsiveContainer>
     </div>
   );

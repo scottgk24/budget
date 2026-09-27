@@ -28,7 +28,8 @@ import {
   yearRange,
 } from "@/lib/format";
 
-const AVG_MONTHS = 6;
+/** Lookback for category series / spend-trend chart (supports 12-month filter). */
+const SERIES_MONTHS = 12;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export async function GET(req: Request) {
@@ -59,7 +60,7 @@ export async function GET(req: Request) {
 
     const { start, end } = monthRange(month);
     const { start: yearStart, end: yearEnd } = yearRange(year);
-    const histStart = startOfMonth(subMonths(startOfMonth(start), AVG_MONTHS));
+    const histStart = startOfMonth(subMonths(startOfMonth(start), SERIES_MONTHS - 1));
     const seriesMonths = monthKeysInRange(histStart, end);
     const annualIdSet = new Set(annualIds);
 
@@ -171,6 +172,9 @@ export async function GET(req: Request) {
       }),
     );
 
+    // Keep response field name for the budgets table avg markers.
+    const averageMonths = maxDivisor || SERIES_MONTHS;
+
     const fundPlan =
       isPersonal
         ? await computeFundMonth({ workspaceId: workspace.id, month })
@@ -189,7 +193,7 @@ export async function GET(req: Request) {
       spentByCategory,
       spentYtdByCategory,
       averageByCategory,
-      averageMonths: maxDivisor || AVG_MONTHS,
+      averageMonths,
       categorySeries,
       month,
       year,
