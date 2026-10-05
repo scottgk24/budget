@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { startOfMonth, subMonths } from "date-fns";
+import { parseISO, startOfMonth } from "date-fns";
 import {
   AuthError,
   ensureMissingDefaultCategories,
@@ -21,6 +21,7 @@ import { ledgerSlugSchema } from "@/lib/workspace-ledgers";
 import { parseLedger } from "@/lib/ledger";
 import { isPersonalLedger } from "@/lib/workspace-ledgers";
 import {
+  lastCompleteMonthKeys,
   monthKey,
   monthKeysInRange,
   monthRange,
@@ -28,6 +29,7 @@ import {
   yearRange,
 } from "@/lib/format";
 
+/** Trailing complete months used for category avg markers (excludes selected month). */
 const AVG_MONTHS = 6;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -59,7 +61,13 @@ export async function GET(req: Request) {
 
     const { start, end } = monthRange(month);
     const { start: yearStart, end: yearEnd } = yearRange(year);
-    const histStart = startOfMonth(subMonths(startOfMonth(start), AVG_MONTHS));
+    // Prior AVG_MONTHS fully completed months (before selected) + selected month
+    // for this-month UI. Averages still filter `month < selected`.
+    const completeKeys = lastCompleteMonthKeys(AVG_MONTHS, start);
+    const histStart =
+      completeKeys.length > 0
+        ? startOfMonth(parseISO(`${completeKeys[0]}-01`))
+        : startOfMonth(start);
     const seriesMonths = monthKeysInRange(histStart, end);
     const annualIdSet = new Set(annualIds);
 
