@@ -13,6 +13,7 @@ import {
   formatMonthLabel,
   METRICS_RANGES,
   metricsRange,
+  metricsRangeWindowLabel,
   monthKey,
   parseMetricsRangeId,
   recentMonthKeys,
@@ -60,6 +61,9 @@ function isRangePeriod(period: Period): period is MetricsRangeId {
 
 function periodLabel(period: Period): string {
   if (isRangePeriod(period)) {
+    if (period === "3m" || period === "6m" || period === "12m") {
+      return metricsRangeWindowLabel(period);
+    }
     return METRICS_RANGES.find((r) => r.id === period)?.label ?? period;
   }
   return formatMonthLabel(period);
@@ -320,11 +324,17 @@ function TransactionsPageInner() {
                 aria-label="Period"
               >
                 <optgroup label="Range">
-                  {METRICS_RANGES.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.label}
-                    </option>
-                  ))}
+                  {METRICS_RANGES.map((r) => {
+                    const window =
+                      r.id === "3m" || r.id === "6m" || r.id === "12m"
+                        ? metricsRangeWindowLabel(r.id)
+                        : null;
+                    return (
+                      <option key={r.id} value={r.id}>
+                        {window ? `${r.label} (${window})` : r.label}
+                      </option>
+                    );
+                  })}
                 </optgroup>
                 <optgroup label="Month">
                   {MONTH_OPTIONS.map((m) => (
