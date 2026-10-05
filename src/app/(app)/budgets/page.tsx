@@ -25,7 +25,7 @@ import {
   type FundKind,
 } from "@/lib/categories";
 import { ledgerCopy } from "@/lib/ledger-copy";
-import { getDate, getDayOfYear, getDaysInMonth, getDaysInYear } from "date-fns";
+import { getDate, getDayOfYear, getDaysInMonth, getDaysInYear, parseISO, format } from "date-fns";
 import type { BudgetTrendPoint } from "@/components/budget-charts";
 
 const TREND_RANGES = [
@@ -35,6 +35,18 @@ const TREND_RANGES = [
 ];
 type TrendRangeId = (typeof TREND_RANGES)[number]["id"];
 type TrendFundScope = "all" | "flexible" | "committed";
+
+/** Compact span for complete-month windows shown on trend filters. */
+function trendMonthSpanLabel(months: string[]): string {
+  if (months.length === 0) return "";
+  const first = parseISO(`${months[0]}-01`);
+  const last = parseISO(`${months[months.length - 1]}-01`);
+  if (months.length === 1) return format(first, "MMM yyyy");
+  if (format(first, "yyyy") === format(last, "yyyy")) {
+    return `${format(first, "MMM")}–${format(last, "MMM yyyy")}`;
+  }
+  return `${format(first, "MMM yyyy")} – ${format(last, "MMM yyyy")}`;
+}
 
 const BudgetSpendTrendChart = dynamic(
   () => import("@/components/budget-charts").then((m) => m.BudgetSpendTrendChart),
@@ -473,7 +485,10 @@ export default function BudgetsPage() {
     if (!categorySeries) return [];
     const rangeMonths =
       TREND_RANGES.find((r) => r.id === trendRangeId)?.months ?? 6;
-    const months = categorySeries.months.slice(-rangeMonths);
+    // Last N fully completed months only (exclude selected / in-progress month).
+    const months = categorySeries.months
+      .filter((m) => m < month)
+      .slice(-rangeMonths);
     if (months.length === 0) return [];
 
     let seriesList = Object.values(categorySeries.byCategoryId).filter(
@@ -504,11 +519,11 @@ export default function BudgetsPage() {
       };
     });
 
-    const completed = points.filter((p) => p.key < month && p.spent !== 0);
+    const withSpend = points.filter((p) => p.spent !== 0);
     const average =
-      completed.length > 0
+      withSpend.length > 0
         ? Math.round(
-            (completed.reduce((sum, p) => sum + p.spent, 0) / completed.length) *
+            (withSpend.reduce((sum, p) => sum + p.spent, 0) / withSpend.length) *
               100,
           ) / 100
         : points.length > 0
@@ -527,6 +542,16 @@ export default function BudgetsPage() {
     kind,
     month,
   ]);
+
+  const trendWindowLabel = useMemo(() => {
+    if (!categorySeries) return null;
+    const rangeMonths =
+      TREND_RANGES.find((r) => r.id === trendRangeId)?.months ?? 6;
+    const months = categorySeries.months
+      .filter((m) => m < month)
+      .slice(-rangeMonths);
+    return months.length > 0 ? trendMonthSpanLabel(months) : null;
+  }, [categorySeries, trendRangeId, month]);
 
   const allExpanded = rows.length > 0 && rows.every((c) => expanded.has(c.id));
 
@@ -834,6 +859,7 @@ export default function BudgetsPage() {
                 <h2 className="mb-1 font-display text-lg">Spend vs budget</h2>
                 <p className="text-xs text-[var(--muted)]">
                   Actual spend against budget allotment and average over time
+                  {trendWindowLabel ? ` · ${trendWindowLabel}` : ""}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -844,11 +870,22 @@ export default function BudgetsPage() {
                     setTrendRangeId(e.target.value as TrendRangeId)
                   }
                 >
-                  {TREND_RANGES.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.label}
-                    </option>
-                  ))}
+                  {TREND_RANGES.map((r) => {
+                    const spanMonths = categorySeries
+                      ? categorySeries.months
+                          .filter((m) => m < month)
+                          .slice(-r.months)
+                      : [];
+                    const span =
+                      spanMonths.length > 0
+                        ? trendMonthSpanLabel(spanMonths)
+                        : null;
+                    return (
+                      <option key={r.id} value={r.id}>
+                        {span ? `${r.label} (${span})` : r.label}
+                      </option>
+                    );
+                  })}
                 </Select>
                 {kind === "personal" ? (
                   <Select

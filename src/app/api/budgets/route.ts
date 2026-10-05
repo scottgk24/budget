@@ -28,7 +28,7 @@ import {
   yearRange,
 } from "@/lib/format";
 
-/** Lookback for category series / spend-trend chart (supports 12-month filter). */
+/** Lookback for category series / spend-trend chart (N complete months + selected). */
 const SERIES_MONTHS = 12;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -60,7 +60,8 @@ export async function GET(req: Request) {
 
     const { start, end } = monthRange(month);
     const { start: yearStart, end: yearEnd } = yearRange(year);
-    const histStart = startOfMonth(subMonths(startOfMonth(start), SERIES_MONTHS - 1));
+    // SERIES_MONTHS fully completed months before selected, plus selected month.
+    const histStart = startOfMonth(subMonths(startOfMonth(start), SERIES_MONTHS));
     const seriesMonths = monthKeysInRange(histStart, end);
     const annualIdSet = new Set(annualIds);
 
