@@ -20,6 +20,7 @@ import {
 import {
   METRICS_RANGES,
   formatMonthLabel,
+  metricsRangeWindowLabel,
   monthRange,
   parseMetricsRangeId,
   toDateParam,
@@ -156,8 +157,14 @@ export default function ReportsPage() {
   const view = dataLedger === ledger ? data : null;
   const rangeFrom = view ? toDateParam(new Date(view.start)) : null;
   const rangeTo = view ? toDateParam(new Date(view.end)) : null;
-  const rangeLabel =
+  const rangeName =
     METRICS_RANGES.find((r) => r.id === rangeId)?.label ?? "Selected range";
+  const rangeWindow = metricsRangeWindowLabel(rangeId);
+  /** Chip/subtitle: prefer concrete months for 3m/6m/12m; keep named label for 30d/ytd/all. */
+  const rangeLabel =
+    rangeId === "3m" || rangeId === "6m" || rangeId === "12m"
+      ? rangeWindow
+      : rangeName;
 
   const categoryOptions = useMemo(() => {
     if (!view?.categorySeries) return [];
@@ -221,11 +228,17 @@ export default function ReportsPage() {
             value={rangeId}
             onChange={(e) => setRangeId(parseMetricsRangeId(e.target.value))}
           >
-            {METRICS_RANGES.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.label}
-              </option>
-            ))}
+            {METRICS_RANGES.map((r) => {
+              const window =
+                r.id === "3m" || r.id === "6m" || r.id === "12m"
+                  ? metricsRangeWindowLabel(r.id)
+                  : null;
+              return (
+                <option key={r.id} value={r.id}>
+                  {window ? `${r.label} (${window})` : r.label}
+                </option>
+              );
+            })}
           </Select>
         }
       />

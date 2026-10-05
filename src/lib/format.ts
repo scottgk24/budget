@@ -28,6 +28,13 @@ export const METRICS_RANGES: Array<{ id: MetricsRangeId; label: string }> = [
   { id: "all", label: "All time" },
 ];
 
+/** Month-count lookbacks that mean last N fully completed calendar months. */
+const COMPLETE_MONTH_RANGE_COUNTS: Partial<Record<MetricsRangeId, number>> = {
+  "3m": 3,
+  "6m": 6,
+  "12m": 12,
+};
+
 export function parseMetricsRangeId(raw: string | null | undefined): MetricsRangeId {
   if (
     raw === "30d" ||
@@ -40,6 +47,56 @@ export function parseMetricsRangeId(raw: string | null | undefined): MetricsRang
     return raw;
   }
   return "3m";
+}
+
+/**
+ * Last `count` fully completed calendar months, oldest-first.
+ * Excludes the in-progress month. On Oct 5 with count=3 → Jul, Aug, Sep.
+ */
+export function lastCompleteMonthKeys(
+  count: number,
+  now: Date = new Date(),
+): string[] {
+  if (count <= 0) return [];
+  const lastComplete = startOfMonth(subMonths(now, 1));
+  return Array.from({ length: count }, (_, i) =>
+    monthKey(subMonths(lastComplete, count - 1 - i)),
+  );
+}
+
+/** Compact span for complete-month windows, e.g. "Jul–Sep 2026" or "Oct 2025 – Sep 2026". */
+export function formatMonthSpanLabel(months: string[]): string {
+  if (months.length === 0) return "";
+  const first = parseISO(`${months[0]}-01`);
+  const last = parseISO(`${months[months.length - 1]}-01`);
+  if (months.length === 1) return format(first, "MMM yyyy");
+  if (format(first, "yyyy") === format(last, "yyyy")) {
+    return `${format(first, "MMM")}–${format(last, "MMM yyyy")}`;
+  }
+  return `${format(first, "MMM yyyy")} – ${format(last, "MMM yyyy")}`;
+}
+
+/**
+ * Honest window label for a metrics range chip/subtitle.
+ * For 3m/6m/12m uses completed months only (e.g. "Jul–Sep 2026").
+ */
+export function metricsRangeWindowLabel(
+  rangeId: MetricsRangeId,
+  now: Date = new Date(),
+  earliestData?: Date | null,
+): string {
+  const completeCount = COMPLETE_MONTH_RANGE_COUNTS[rangeId];
+  if (completeCount != null) {
+    return formatMonthSpanLabel(lastCompleteMonthKeys(completeCount, now));
+  }
+  const { start, end } = metricsRange(rangeId, now, earliestData);
+  if (rangeId === "30d") {
+    return `${format(start, "MMM d")} – ${format(end, "MMM d, yyyy")}`;
+  }
+  if (rangeId === "ytd") {
+    return `${format(start, "MMM d")} – ${format(end, "MMM d, yyyy")}`;
+  }
+  return `${format(start, "MMM yyyy")} – ${format(end, "MMM yyyy")}`;
 }
 
 export function formatCurrency(amount: number, currency = "USD"): string {
@@ -167,6 +224,9 @@ export function periodBounds(
 
 /**
  * Date range for metrics charts.
+ * `3m` / `6m` / `12m` = last N **fully completed** calendar months
+ * (excludes the in-progress month). Example on Oct 5: 3m → Jul 1 – Sep 30.
+ * `30d` / `ytd` / `all` still end at endOfDay(now).
  * `earliestData` is used when range is `all` (first synced transaction).
  */
 export function metricsRange(
@@ -174,17 +234,19 @@ export function metricsRange(
   now: Date = new Date(),
   earliestData?: Date | null,
 ): { start: Date; end: Date } {
+  const completeCount = COMPLETE_MONTH_RANGE_COUNTS[rangeId];
+  if (completeCount != null) {
+    const keys = lastCompleteMonthKeys(completeCount, now);
+    const start = startOfMonth(parseISO(`${keys[0]}-01`));
+    const end = endOfMonth(parseISO(`${keys[keys.length - 1]}-01`));
+    return { start, end };
+  }
+
   const end = endOfDay(now);
   let start: Date;
 
   if (rangeId === "30d") {
     start = startOfDay(subDays(now, 29));
-  } else if (rangeId === "3m") {
-    start = startOfMonth(subMonths(now, 2));
-  } else if (rangeId === "6m") {
-    start = startOfMonth(subMonths(now, 5));
-  } else if (rangeId === "12m") {
-    start = startOfMonth(subMonths(now, 11));
   } else if (rangeId === "ytd") {
     start = startOfYear(now);
   } else {
