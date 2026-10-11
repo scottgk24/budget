@@ -25,31 +25,27 @@ import {
   type FundKind,
 } from "@/lib/categories";
 import { ledgerCopy } from "@/lib/ledger-copy";
-import { getDate, getDayOfYear, getDaysInMonth, getDaysInYear, parseISO, format } from "date-fns";
-import type { BudgetTrendPoint } from "@/components/budget-charts";
+import { getDate, getDayOfYear, getDaysInMonth, getDaysInYear } from "date-fns";
+import type { SpendPacePoint } from "@/lib/report-types";
 
-const TREND_RANGES = [
-  { id: "3m" as const, label: "3 months", months: 3 },
-  { id: "6m" as const, label: "6 months", months: 6 },
-  { id: "12m" as const, label: "12 months", months: 12 },
-];
-type TrendRangeId = (typeof TREND_RANGES)[number]["id"];
-type TrendFundScope = "all" | "flexible" | "committed";
+type PaceFundScope = "all" | "flexible" | "committed";
 
-/** Compact span for complete-month windows shown on trend filters. */
-function trendMonthSpanLabel(months: string[]): string {
-  if (months.length === 0) return "";
-  const first = parseISO(`${months[0]}-01`);
-  const last = parseISO(`${months[months.length - 1]}-01`);
-  if (months.length === 1) return format(first, "MMM yyyy");
-  if (format(first, "yyyy") === format(last, "yyyy")) {
-    return `${format(first, "MMM")}–${format(last, "MMM yyyy")}`;
-  }
-  return `${format(first, "MMM yyyy")} – ${format(last, "MMM yyyy")}`;
-}
+type MonthPaceResponse = {
+  budgetTotal: number;
+  spendPace: {
+    series: SpendPacePoint[];
+    budgetTotal: number;
+    spentToDate: number;
+    freeToSpend: number | null;
+    idealToDate: number;
+    paceDelta: number | null;
+    dayOfMonth: number;
+    daysInMonth: number;
+  };
+};
 
-const BudgetSpendTrendChart = dynamic(
-  () => import("@/components/budget-charts").then((m) => m.BudgetSpendTrendChart),
+const SpendPaceChart = dynamic(
+  () => import("@/components/report-charts").then((m) => m.SpendPaceChart),
   {
     ssr: false,
     loading: () => (
@@ -339,15 +335,14 @@ export default function BudgetsPage() {
   const [funds, setFunds] = useState<Fund[]>([]);
   const [fundPlan, setFundPlan] = useState<FundPlan | null>(null);
   const [coverFrom, setCoverFrom] = useState("");
-  const [trendRangeId, setTrendRangeId] = useState<TrendRangeId>("6m");
-  const [trendCategoryId, setTrendCategoryId] = useState<string>("all");
-  const [trendFundScope, setTrendFundScope] = useState<TrendFundScope>("all");
+  const [paceCategoryId, setPaceCategoryId] = useState<string>("all");
+  const [paceFundScope, setPaceFundScope] = useState<PaceFundScope>("all");
+  const [monthPace, setMonthPace] = useState<MonthPaceResponse | null>(null);
+  const [paceLoading, setPaceLoading] = useState(false);
 
   const load = useCallback(async () => {
     const requested = ledger;
     setError(null);
-    setTrendCategoryId("all");
-    setTrendFundScope("all");
     const res = await fetch(`/api/budgets?ledger=${requested}&month=${month}`);
     const json = await res.json();
     if (!isCurrent(requested)) return;
@@ -376,6 +371,12 @@ export default function BudgetsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Reset pace filters when the ledger changes (not mid-edit on same ledger).
+  useEffect(() => {
+    setPaceCategoryId("all");
+    setPaceFundScope("all");
+  }, [ledger]);
 
   const rows = useMemo(
     () => categories.filter((c) => !SKIP.has(c.name)),
@@ -464,10 +465,10 @@ export default function BudgetsPage() {
     [funds],
   );
 
-  const effectiveFundScope: TrendFundScope =
-    kind === "personal" ? trendFundScope : "all";
+  const effectiveFundScope: PaceFundScope =
+    kind === "personal" ? paceFundScope : "all";
 
-  const trendCategoryOptions = useMemo(() => {
+  const paceCategoryOptions = useMemo(() => {
     let list = rows;
     if (kind === "personal" && effectiveFundScope !== "all") {
       list = list.filter((c) => categoryFundKind(c) === effectiveFundScope);
@@ -476,82 +477,66 @@ export default function BudgetsPage() {
   }, [rows, kind, effectiveFundScope, categoryFundKind]);
 
   const effectiveCategoryId =
-    trendCategoryId !== "all" &&
-    trendCategoryOptions.some((c) => c.id === trendCategoryId)
-      ? trendCategoryId
+    paceCategoryId !== "all" &&
+    paceCategoryOptions.some((c) => c.id === paceCategoryId)
+      ? paceCategoryId
       : "all";
 
-  const trendPoints = useMemo((): BudgetTrendPoint[] => {
-    if (!categorySeries) return [];
-    const rangeMonths =
-      TREND_RANGES.find((r) => r.id === trendRangeId)?.months ?? 6;
-    // Last N fully completed months only (exclude selected / in-progress month).
-    const months = categorySeries.months
-      .filter((m) => m < month)
-      .slice(-rangeMonths);
-    if (months.length === 0) return [];
-
-    let seriesList = Object.values(categorySeries.byCategoryId).filter(
-      (s) => !SKIP.has(s.name),
-    );
-    if (effectiveCategoryId !== "all") {
-      seriesList = seriesList.filter((s) => s.categoryId === effectiveCategoryId);
-    } else if (kind === "personal" && effectiveFundScope !== "all") {
-      const allowed = new Set(trendCategoryOptions.map((c) => c.id));
-      seriesList = seriesList.filter((s) => allowed.has(s.categoryId));
-    }
-
-    const points = months.map((m) => {
-      let spent = 0;
-      let budget = 0;
-      for (const series of seriesList) {
-        const pt = series.points.find((p) => p.month === m);
-        if (!pt) continue;
-        spent += pt.spent;
-        budget += pt.budget;
+  const loadPace = useCallback(async () => {
+    if (loadedLedger !== ledger) return;
+    const requested = ledger;
+    setPaceLoading(true);
+    try {
+      const params = new URLSearchParams({
+        ledger: requested,
+        month,
+        fundKind: effectiveFundScope,
+        categoryId: effectiveCategoryId,
+      });
+      const res = await fetch(`/api/budgets/pace?${params}`);
+      const json = await res.json();
+      if (!isCurrent(requested)) return;
+      if (!res.ok) {
+        setMonthPace(null);
+        return;
       }
-      return {
-        key: m,
-        label: formatMonthLabel(m),
-        spent: Math.round(spent * 100) / 100,
-        budget: Math.round(budget * 100) / 100,
-        average: 0,
-      };
-    });
-
-    const withSpend = points.filter((p) => p.spent !== 0);
-    const average =
-      withSpend.length > 0
-        ? Math.round(
-            (withSpend.reduce((sum, p) => sum + p.spent, 0) / withSpend.length) *
-              100,
-          ) / 100
-        : points.length > 0
-          ? Math.round(
-              (points.reduce((sum, p) => sum + p.spent, 0) / points.length) * 100,
-            ) / 100
-          : 0;
-
-    return points.map((p) => ({ ...p, average }));
+      setMonthPace(json as MonthPaceResponse);
+    } catch {
+      if (isCurrent(requested)) setMonthPace(null);
+    } finally {
+      if (isCurrent(requested)) setPaceLoading(false);
+    }
   }, [
-    categorySeries,
-    trendRangeId,
-    effectiveCategoryId,
-    effectiveFundScope,
-    trendCategoryOptions,
-    kind,
+    loadedLedger,
+    ledger,
     month,
+    effectiveFundScope,
+    effectiveCategoryId,
+    isCurrent,
   ]);
 
-  const trendWindowLabel = useMemo(() => {
-    if (!categorySeries) return null;
-    const rangeMonths =
-      TREND_RANGES.find((r) => r.id === trendRangeId)?.months ?? 6;
-    const months = categorySeries.months
-      .filter((m) => m < month)
-      .slice(-rangeMonths);
-    return months.length > 0 ? trendMonthSpanLabel(months) : null;
-  }, [categorySeries, trendRangeId, month]);
+  useEffect(() => {
+    void loadPace();
+  }, [loadPace]);
+
+  const paceStatus = useMemo(() => {
+    const pace = monthPace?.spendPace;
+    if (!pace || pace.paceDelta == null || monthPace.budgetTotal <= 0) return null;
+    const delta = pace.paceDelta;
+    if (Math.abs(delta) < 1) {
+      return { tone: "muted" as const, text: "Right on pace for this month" };
+    }
+    if (delta > 0) {
+      return {
+        tone: "positive" as const,
+        text: `${formatCurrency(delta)} under ideal pace through today`,
+      };
+    }
+    return {
+      tone: "danger" as const,
+      text: `${formatCurrency(Math.abs(delta))} over ideal pace through today`,
+    };
+  }, [monthPace, formatCurrency]);
 
   const allExpanded = rows.length > 0 && rows.every((c) => expanded.has(c.id));
 
@@ -590,6 +575,7 @@ export default function BudgetsPage() {
       setSaved((s) => ({ ...s, [categoryId]: rounded }));
       setNotice(kind === "business" ? "Limit saved" : "Budget saved");
       window.setTimeout(() => setNotice(null), 1500);
+      void loadPace();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
     } finally {
@@ -645,6 +631,7 @@ export default function BudgetsPage() {
       setFundPlan(json.plan ?? null);
       setNotice("Contribution saved");
       window.setTimeout(() => setNotice(null), 1500);
+      void loadPace();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save contribution");
     } finally {
@@ -697,6 +684,7 @@ export default function BudgetsPage() {
       setCoverFrom("");
       setNotice("Covered from reserve — sinking funds otherwise untouched");
       window.setTimeout(() => setNotice(null), 2000);
+      void loadPace();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to cover overspend");
     } finally {
@@ -856,44 +844,21 @@ export default function BudgetsPage() {
           <Card className="mb-6">
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="mb-1 font-display text-lg">Spend vs budget</h2>
+                <h2 className="mb-1 font-display text-lg">Month pace</h2>
                 <p className="text-xs text-[var(--muted)]">
-                  Actual spend against budget allotment and average over time
-                  {trendWindowLabel ? ` · ${trendWindowLabel}` : ""}
+                  Cumulative spend this month vs ideal budget burn — are you on
+                  track?
+                  <span className="ml-1">· {formatMonthLabel(month)}</span>
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Select
-                  aria-label="Trend time period"
-                  value={trendRangeId}
-                  onChange={(e) =>
-                    setTrendRangeId(e.target.value as TrendRangeId)
-                  }
-                >
-                  {TREND_RANGES.map((r) => {
-                    const spanMonths = categorySeries
-                      ? categorySeries.months
-                          .filter((m) => m < month)
-                          .slice(-r.months)
-                      : [];
-                    const span =
-                      spanMonths.length > 0
-                        ? trendMonthSpanLabel(spanMonths)
-                        : null;
-                    return (
-                      <option key={r.id} value={r.id}>
-                        {span ? `${r.label} (${span})` : r.label}
-                      </option>
-                    );
-                  })}
-                </Select>
                 {kind === "personal" ? (
                   <Select
                     aria-label="Fund type"
                     value={effectiveFundScope}
                     onChange={(e) => {
-                      setTrendFundScope(e.target.value as TrendFundScope);
-                      setTrendCategoryId("all");
+                      setPaceFundScope(e.target.value as PaceFundScope);
+                      setPaceCategoryId("all");
                     }}
                   >
                     <option value="all">All funds</option>
@@ -904,10 +869,10 @@ export default function BudgetsPage() {
                 <Select
                   aria-label="Budget category"
                   value={effectiveCategoryId}
-                  onChange={(e) => setTrendCategoryId(e.target.value)}
+                  onChange={(e) => setPaceCategoryId(e.target.value)}
                 >
                   <option value="all">All categories</option>
-                  {trendCategoryOptions.map((c) => (
+                  {paceCategoryOptions.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
                     </option>
@@ -915,50 +880,73 @@ export default function BudgetsPage() {
                 </Select>
               </div>
             </div>
-            <BudgetSpendTrendChart
-              data={trendPoints}
-              emptyLabel="Nothing here yet"
-              onSelect={(point: BudgetTrendPoint) => {
-                const { start, end } = monthRange(point.key);
-                const from = toDateParam(start);
-                const to = toDateParam(end);
-                const label = formatMonthLabel(point.key);
-                if (effectiveCategoryId !== "all") {
-                  const cat = rows.find((c) => c.id === effectiveCategoryId);
-                  setBreakdown({
-                    type: "transactions",
-                    title: cat?.name ?? "Spend",
-                    subtitle: label,
-                    from,
-                    to,
-                    categoryId: effectiveCategoryId,
-                  });
-                  return;
-                }
-                if (kind === "personal" && effectiveFundScope !== "all") {
+            {paceStatus ? (
+              <p
+                className={cn(
+                  "mb-3 text-sm tabular-nums",
+                  paceStatus.tone === "positive" && "text-[var(--positive)]",
+                  paceStatus.tone === "danger" && "text-[var(--danger)]",
+                  paceStatus.tone === "muted" && "text-[var(--muted)]",
+                )}
+              >
+                {paceStatus.text}
+              </p>
+            ) : null}
+            {paceLoading && !monthPace ? (
+              <p className="flex h-56 items-center justify-center text-sm text-[var(--muted)]">
+                Loading chart…
+              </p>
+            ) : (
+              <SpendPaceChart
+                data={monthPace?.spendPace.series ?? []}
+                budgetTotal={monthPace?.budgetTotal ?? 0}
+                emptyLabel="Set a budget to see this month’s pace."
+                onSelect={(point: SpendPacePoint) => {
+                  const { start, end } = monthRange(month);
+                  const from = toDateParam(start);
+                  const to = toDateParam(end);
+                  const label = formatMonthLabel(month);
+                  if (effectiveCategoryId !== "all") {
+                    const cat = rows.find((c) => c.id === effectiveCategoryId);
+                    setBreakdown({
+                      type: "transactions",
+                      title: cat?.name ?? "Spend",
+                      subtitle: `${label} · through ${point.label}`,
+                      from,
+                      to,
+                      categoryId: effectiveCategoryId,
+                    });
+                    return;
+                  }
+                  if (kind === "personal" && effectiveFundScope !== "all") {
+                    setBreakdown({
+                      type: "range",
+                      title:
+                        effectiveFundScope === "flexible"
+                          ? "Flexible spend"
+                          : "Committed spend",
+                      from,
+                      to,
+                      flexibility:
+                        effectiveFundScope === "flexible"
+                          ? "discretionary"
+                          : "fixed",
+                    });
+                    return;
+                  }
                   setBreakdown({
                     type: "range",
-                    title:
-                      effectiveFundScope === "flexible"
-                        ? "Flexible spend"
-                        : "Committed spend",
+                    title: "Spend",
                     from,
                     to,
-                    flexibility:
-                      effectiveFundScope === "flexible"
-                        ? "discretionary"
-                        : "fixed",
                   });
-                  return;
-                }
-                setBreakdown({
-                  type: "range",
-                  title: "Spend",
-                  from,
-                  to,
-                });
-              }}
-            />
+                }}
+              />
+            )}
+            <p className="mt-2 text-[11px] text-[var(--muted)]">
+              Gold line = actual cumulative spend · Dashed green = even daily
+              pace to hit budget · Horizontal mark = full month budget
+            </p>
           </Card>
 
           <BreakdownModal
