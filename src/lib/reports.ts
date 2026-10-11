@@ -337,6 +337,11 @@ export async function buildSpendPace(params: {
   spentToDate: number;
   fundKind?: "all" | "flexible" | "committed" | "reserve";
   flexibility?: "all" | "discretionary" | "fixed";
+  /**
+   * When non-null, only these category ids count toward actual spend.
+   * Pass `[]` for an empty scope (zero spend); omit/null for all categories.
+   */
+  categoryIds?: string[] | null;
 }) {
   const { workspaceId, ledger, month, budgetTotal } = params;
   const fundKind =
@@ -346,32 +351,47 @@ export async function buildSpendPace(params: {
       : params.flexibility === "fixed"
         ? "committed"
         : "all");
+  const filterByCategory = params.categoryIds != null;
+  const categoryIdSet = filterByCategory ? new Set(params.categoryIds) : null;
   const start = startOfMonth(new Date(`${month}-01T12:00:00`));
   const end = endOfMonth(start);
   const today = new Date();
   const days = eachDayOfInterval({ start, end });
   const dayCount = days.length;
 
-  const txs = await prisma.transaction.findMany({
-    where: {
-      workspaceId,
-      ledger,
-      pending: false,
-      date: { gte: start, lte: end },
-      ...excludeNonSpendCategory,
-    },
-    select: {
-      amount: true,
-      date: true,
-      fund: { select: { kind: true, slug: true } },
-      category: { select: { name: true } },
-    },
-    orderBy: { date: "asc" },
-  });
+  const txs =
+    filterByCategory && categoryIdSet!.size === 0
+      ? []
+      : await prisma.transaction.findMany({
+          where: {
+            workspaceId,
+            ledger,
+            pending: false,
+            date: { gte: start, lte: end },
+            ...excludeNonSpendCategory,
+            ...(categoryIdSet
+              ? { categoryId: { in: [...categoryIdSet] } }
+              : {}),
+          },
+          select: {
+            amount: true,
+            date: true,
+            categoryId: true,
+            fund: { select: { kind: true, slug: true } },
+            category: { select: { name: true } },
+          },
+          orderBy: { date: "asc" },
+        });
 
   const spendByDay = new Map<string, number>();
   for (const tx of txs) {
     if (!isSpendAmount(tx.amount, tx.category?.name)) continue;
+    if (
+      categoryIdSet &&
+      (!tx.categoryId || !categoryIdSet.has(tx.categoryId))
+    ) {
+      continue;
+    }
     if (fundKind !== "all" && ledger === "personal") {
       const kind = resolveSpendBucket(tx.fund?.kind, tx.category?.name);
       if (kind !== fundKind) continue;
