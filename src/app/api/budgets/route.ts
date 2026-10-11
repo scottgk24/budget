@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { startOfMonth, subMonths } from "date-fns";
+import { parseISO, startOfMonth } from "date-fns";
 import {
   AuthError,
   ensureMissingDefaultCategories,
@@ -21,6 +21,7 @@ import { ledgerSlugSchema } from "@/lib/workspace-ledgers";
 import { parseLedger } from "@/lib/ledger";
 import { isPersonalLedger } from "@/lib/workspace-ledgers";
 import {
+  lastCompleteMonthKeys,
   monthKey,
   monthKeysInRange,
   monthRange,
@@ -60,8 +61,13 @@ export async function GET(req: Request) {
 
     const { start, end } = monthRange(month);
     const { start: yearStart, end: yearEnd } = yearRange(year);
-    // SERIES_MONTHS fully completed months before selected, plus selected month.
-    const histStart = startOfMonth(subMonths(startOfMonth(start), SERIES_MONTHS));
+    // Prior SERIES_MONTHS fully completed months (before selected) + selected month
+    // for trend series. Averages still filter `month < selected`.
+    const completeKeys = lastCompleteMonthKeys(SERIES_MONTHS, start);
+    const histStart =
+      completeKeys.length > 0
+        ? startOfMonth(parseISO(`${completeKeys[0]}-01`))
+        : startOfMonth(start);
     const seriesMonths = monthKeysInRange(histStart, end);
     const annualIdSet = new Set(annualIds);
 
