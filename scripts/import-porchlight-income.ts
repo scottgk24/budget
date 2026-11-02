@@ -29,11 +29,11 @@ type SheetSession = {
 const SESSIONS: SheetSession[] = [
   s("carlie-jones", "Carlie Jones", "2025-11-01", "Family", 100, 0, "cash", ["jones", "carlie"]),
   s("amanda-mccoy", "Amanda McCoy", "2025-11-08", "Family", 100, 0, "venmo", ["mccoy", "amanda"]),
-  s("dawn-provencher", "Dawn Provencher", "2025-11-16", "Family", 150, 0, "venmo", ["provencher", "dawn"]),
+  s("dawn-provencher", "Dawn Provencher", "2025-11-16", "Family", 150, 50, "venmo", ["provencher", "dawn"]),
   s("bita-elliott", "Bita Elliott", "2025-11-21", "Newborn", 100, 0, "venmo", ["elliott", "bita"]),
   s("nicki-ryan", "Nicki Ryan", "2025-11-29", "Family", 100, 0, "venmo", ["ryan", "nicki"]),
-  s("sarah-west", "Sarah West", "2025-11-30", "Senior", 150, 0, "venmo", ["west", "sarah"]),
-  s("ashley-freni", "Ashley Freni", "2025-12-07", "Family", 150, 0, "venmo", ["freni", "ashley"]),
+  s("sarah-west", "Sarah West", "2025-11-30", "Senior", 150, 50, "venmo", ["west", "sarah"]),
+  s("ashley-freni", "Ashley Freni", "2025-12-07", "Family", 150, 50, "venmo", ["freni", "ashley"]),
   s("michelle-varela", "Michelle Varela", "2025-12-14", "Family", 100, 0, "venmo", ["varela", "michelle"]),
   s("amanda-mayberry", "Amanda Mayberry", "2025-12-13", "Family", 100, 0, "venmo", ["mayberry"]),
   s("hafsa-hussaini", "Hafsa Hussaini", "2025-12-15", "Newborn", 150, 0, "venmo", ["hussaini", "hafsa"]),
@@ -58,6 +58,14 @@ const SESSIONS: SheetSession[] = [
   s("hemant-maternity", "Hemant Gupta", "2026-06-09", "Maternity", 200, 0, "zelle", ["gupta", "hemant", "hermant"]),
   s("hemant-newborn", "Hemant Gupta", "2026-06-26", "Newborn", 300, 0, "zelle", ["gupta", "ashima", "tayal"]),
   s("faith-chip", "Faith / Chip Riley Roberts", "2026-06-05", "Family", 100, 50, "unknown", ["riley", "roberts", "faith"]),
+  // Synced from Photoshoot Schedule Sheet1 (check 2026-11-02) — paid rows after Faith/Chip
+  // Cottonwood Creek 8/3 $100 check: likely BUS COMPLETE CHK "REMOTE ONLINE DEPOSIT # 1" 8/26
+  // (Transfers). Omit from SESSIONS until that deposit is confirmed/recategorized — no auto name match.
+  s("francois-randsom", "Francois Randsom", "2026-08-13", "Ghost mannequin", 100, 0, "cash", ["francois", "randsom", "ransom"]),
+  s("rendi-everett-headshots", "Rendi Everett", "2026-08-28", "Headshots", 125, 0, "zelle", ["everett", "rendi", "pelican"]),
+  s("somu-newborn", "Somu", "2026-09-19", "Newborn", 300, 0, "zelle", ["somu", "saraswathi", "arumugam"]),
+  s("shannon-mcdougall-gift", "Shannon McDougall", "2026-10-27", "Gift certificate", 250, 0, "zelle", ["mcdougall", "mcdougal", "shannon"]),
+  s("nathan-aina-birthday", "Nathan / Gideon Aina", "2026-11-14", "1 year", 100, 0, "zelle", ["aina", "gideon", "nathan"]),
 ];
 
 function s(
@@ -194,6 +202,15 @@ async function main() {
       const idKey = `porchlight-session:${session.key}:${piece.kind}:${session.date}:${piece.amount}`;
       if (alreadyImported.has(idKey)) {
         skipped.push(`already imported ${idKey}`);
+        // Mark the prior manual/bank row used so a tip piece isn't absorbed by name-fallback
+        const prior = existing.find(
+          (tx) =>
+            !tx.used &&
+            nearAmount(tx.amount, piece.amount) &&
+            daysBetween(session.date, tx.date) <= WINDOW_DAYS &&
+            nameHit(session, haystack(tx.name, tx.merchantName)),
+        );
+        if (prior) prior.used = true;
         continue;
       }
 
@@ -222,6 +239,8 @@ async function main() {
   for (const c of create) {
     const hit = existing.find((tx) => {
       if (tx.used) return false;
+      // Don't fold new tip/paid rows into existing Porchlight manual entries
+      if (tx.accountName === MANUAL_ACCOUNT_NAME) return false;
       if (daysBetween(c.session.date, tx.date) > WINDOW_DAYS) return false;
       return nameHit(c.session, haystack(tx.name, tx.merchantName));
     });
