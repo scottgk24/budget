@@ -56,6 +56,10 @@ const AgeOfMoneyChart = dynamic(
   () => import("@/components/report-charts").then((m) => m.AgeOfMoneyChart),
   { ssr: false, loading: () => chartFallback },
 );
+const SavingsChart = dynamic(
+  () => import("@/components/metrics-charts").then((m) => m.SavingsChart),
+  { ssr: false, loading: () => chartFallback },
+);
 
 const CATEGORY_PICKER_SKIP = new Set(["Income", "Transfers", "Review"]);
 
@@ -86,6 +90,13 @@ type ReportsData = {
     Fixed?: number;
     Discretionary?: number;
     Income?: number;
+  }>;
+  monthlyPnL: Array<{
+    key: string;
+    label: string;
+    income: number;
+    spend: number;
+    savings: number;
   }>;
   merchants: Array<{
     merchant: string;
@@ -389,6 +400,35 @@ export default function ReportsPage() {
               )}
             </Card>
           ) : null}
+
+          <Card className="mt-6">
+            <h2 className="mb-1 font-display text-lg">
+              {kind === "personal" ? "Monthly P&L" : "Monthly profit"}
+            </h2>
+            <p className="mb-4 text-sm text-[var(--muted)]">
+              {kind === "personal"
+                ? "Net = income − spend each month · green surplus, red shortfall"
+                : "Net = revenue − expenses each month · green profit, red loss"}
+              <PeriodChip label={rangeLabel} />
+            </p>
+            {loading ? chartFallback : (
+              <SavingsChart
+                data={view.monthlyPnL ?? []}
+                incomeLabel={copy.income}
+                spendLabel={copy.spend}
+                savingsLabel={copy.netSavings}
+                emptyLabel={copy.noSavingsData}
+                onSelectPeriod={(point) => {
+                  setBreakdown({
+                    type: "period",
+                    periodKey: point.key,
+                    granularity: "monthly",
+                    title: point.label,
+                  });
+                }}
+              />
+            )}
+          </Card>
 
           <Card className="mt-6">
             <h2 className="mb-1 font-display text-lg">

@@ -10,6 +10,7 @@ import {
   ComposedChart,
   Legend,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -273,10 +274,48 @@ export function SpendIncomeChart({
   );
 }
 
+function PnLTooltip({
+  active,
+  payload,
+  label,
+  incomeLabel,
+  spendLabel,
+  savingsLabel,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload?: MetricsPoint; value?: number }>;
+  label?: string;
+  incomeLabel: string;
+  spendLabel: string;
+  savingsLabel: string;
+}) {
+  const { formatCurrency } = useMoneyFormat();
+  if (!active || !payload?.length) return null;
+  const point = payload[0]?.payload;
+  if (!point) return null;
+  const netColor = point.savings >= 0 ? COLORS.savingsPos : COLORS.savingsNeg;
+  return (
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm shadow-sm">
+      <p className="mb-1 font-medium">{label}</p>
+      <p className="tabular-nums" style={{ color: COLORS.income }}>
+        {incomeLabel}: {formatCurrency(point.income)}
+      </p>
+      <p className="tabular-nums" style={{ color: COLORS.spend }}>
+        {spendLabel}: {formatCurrency(point.spend)}
+      </p>
+      <p className="tabular-nums" style={{ color: netColor }}>
+        {savingsLabel}: {formatCurrency(point.savings)}
+      </p>
+    </div>
+  );
+}
+
 export function SavingsChart({
   data,
   onSelectPeriod,
   selectedKey,
+  incomeLabel = "Income",
+  spendLabel = "Spend",
   savingsLabel = "Savings",
   emptyLabel = "No savings data in this period yet.",
 }: ChartProps) {
@@ -315,7 +354,17 @@ export function SavingsChart({
             tickFormatter={formatCompactCurrency}
             width={48}
           />
-          <Tooltip content={<ChartTooltip />} cursor={false} />
+          <Tooltip
+            content={
+              <PnLTooltip
+                incomeLabel={incomeLabel}
+                spendLabel={spendLabel}
+                savingsLabel={savingsLabel}
+              />
+            }
+            cursor={false}
+          />
+          <ReferenceLine y={0} stroke={COLORS.grid} strokeWidth={1} />
           <Bar
             dataKey="savings"
             name={savingsLabel}
@@ -333,7 +382,7 @@ export function SavingsChart({
                       ? COLORS.savingsPos
                       : COLORS.savingsNeg
                 }
-                cursor="pointer"
+                cursor={onSelectPeriod ? "pointer" : undefined}
               />
             ))}
           </Bar>
