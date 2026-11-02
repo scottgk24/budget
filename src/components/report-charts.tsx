@@ -162,9 +162,13 @@ function MoneyTooltip({
 export function SpendPaceChart({
   data,
   budgetTotal,
+  onSelect,
+  emptyLabel = "Set a budget to see spend pace.",
 }: {
   data: SpendPacePoint[];
   budgetTotal: number;
+  emptyLabel?: string;
+  onSelect?: (point: SpendPacePoint) => void;
 }) {
   const { formatCompactCurrency } = useMoneyFormat();
   const hasData = data.some((d) => (d.actual ?? 0) > 0) || budgetTotal > 0;
@@ -172,15 +176,43 @@ export function SpendPaceChart({
   if (!hasData) {
     return (
       <p className="flex h-64 items-center justify-center text-sm text-[var(--muted)]">
-        Set a budget to see spend pace.
+        {emptyLabel}
       </p>
     );
   }
 
+  const interactive = Boolean(onSelect);
+
+  function handleClick(state: {
+    activeIndex?: number | string | null;
+    activeLabel?: string | number;
+  }) {
+    if (!onSelect) return;
+    const raw = state.activeIndex;
+    const index =
+      typeof raw === "number"
+        ? raw
+        : typeof raw === "string" && /^\d+$/.test(raw)
+          ? Number(raw)
+          : -1;
+    if (index >= 0 && data[index]) {
+      onSelect(data[index]);
+      return;
+    }
+    if (state.activeLabel != null) {
+      const byLabel = data.find((d) => d.label === String(state.activeLabel));
+      if (byLabel) onSelect(byLabel);
+    }
+  }
+
   return (
-    <div className="h-72 w-full">
+    <div className={`h-72 w-full ${interactive ? "cursor-pointer" : ""}`}>
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+        <LineChart
+          data={data}
+          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+          onClick={handleClick}
+        >
           <CartesianGrid stroke={COLORS.grid} strokeDasharray="3 3" vertical={false} />
           <XAxis
             dataKey="label"
@@ -228,6 +260,12 @@ export function SpendPaceChart({
               stroke={COLORS.spend}
               strokeDasharray="4 4"
               strokeOpacity={0.55}
+              label={{
+                value: "Budget",
+                position: "insideTopRight",
+                fill: COLORS.muted,
+                fontSize: 11,
+              }}
             />
           ) : null}
         </LineChart>
