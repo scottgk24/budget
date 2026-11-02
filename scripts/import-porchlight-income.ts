@@ -59,7 +59,8 @@ const SESSIONS: SheetSession[] = [
   s("hemant-newborn", "Hemant Gupta", "2026-06-26", "Newborn", 300, 0, "zelle", ["gupta", "ashima", "tayal"]),
   s("faith-chip", "Faith / Chip Riley Roberts", "2026-06-05", "Family", 100, 50, "unknown", ["riley", "roberts", "faith"]),
   // Synced from Photoshoot Schedule Sheet1 (check 2026-11-02) — paid rows after Faith/Chip
-  s("cottonwood-creek-headshots", "Cottonwood Creek", "2026-08-03", "Headshots", 100, 0, "check", ["cottonwood"]),
+  // Cottonwood Creek 8/3 $100 check: likely BUS COMPLETE CHK "REMOTE ONLINE DEPOSIT # 1" 8/26
+  // (Transfers). Omit from SESSIONS until that deposit is confirmed/recategorized — no auto name match.
   s("francois-randsom", "Francois Randsom", "2026-08-13", "Ghost mannequin", 100, 0, "cash", ["francois", "randsom", "ransom"]),
   s("rendi-everett-headshots", "Rendi Everett", "2026-08-28", "Headshots", 125, 0, "zelle", ["everett", "rendi", "pelican"]),
   s("somu-newborn", "Somu", "2026-09-19", "Newborn", 300, 0, "zelle", ["somu", "saraswathi", "arumugam"]),
@@ -201,6 +202,15 @@ async function main() {
       const idKey = `porchlight-session:${session.key}:${piece.kind}:${session.date}:${piece.amount}`;
       if (alreadyImported.has(idKey)) {
         skipped.push(`already imported ${idKey}`);
+        // Mark the prior manual/bank row used so a tip piece isn't absorbed by name-fallback
+        const prior = existing.find(
+          (tx) =>
+            !tx.used &&
+            nearAmount(tx.amount, piece.amount) &&
+            daysBetween(session.date, tx.date) <= WINDOW_DAYS &&
+            nameHit(session, haystack(tx.name, tx.merchantName)),
+        );
+        if (prior) prior.used = true;
         continue;
       }
 
@@ -229,6 +239,8 @@ async function main() {
   for (const c of create) {
     const hit = existing.find((tx) => {
       if (tx.used) return false;
+      // Don't fold new tip/paid rows into existing Porchlight manual entries
+      if (tx.accountName === MANUAL_ACCOUNT_NAME) return false;
       if (daysBetween(c.session.date, tx.date) > WINDOW_DAYS) return false;
       return nameHit(c.session, haystack(tx.name, tx.merchantName));
     });
