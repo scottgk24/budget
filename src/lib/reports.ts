@@ -541,6 +541,7 @@ export async function buildReports(params: {
   let incomeTotal = 0;
   const spendByCat = new Map<string, number>();
   const incomeByMonth = new Map<string, number>();
+  const spendByMonth = new Map<string, number>();
   for (const tx of txs) {
     if (isIncomeAmount(tx.amount, tx.category?.name)) {
       const amt = Math.abs(tx.amount);
@@ -552,6 +553,8 @@ export async function buildReports(params: {
     if (!isSpendAmount(tx.amount, tx.category?.name)) continue;
     const name = tx.category?.name ?? "Uncategorized";
     spendByCat.set(name, (spendByCat.get(name) ?? 0) + tx.amount);
+    const mk = format(tx.date, "yyyy-MM");
+    spendByMonth.set(mk, (spendByMonth.get(mk) ?? 0) + tx.amount);
     if (!categoryBucketByName.has(name)) {
       categoryBucketByName.set(
         name,
@@ -559,6 +562,19 @@ export async function buildReports(params: {
       );
     }
   }
+
+  /** Monthly P&L: income − spend per complete month in range (both ledgers). */
+  const monthlyPnL = months.map((m) => {
+    const income = round2(incomeByMonth.get(m) ?? 0);
+    const spend = round2(spendByMonth.get(m) ?? 0);
+    return {
+      key: m,
+      label: format(new Date(`${m}-01T12:00:00`), "MMM yy"),
+      income,
+      spend,
+      savings: round2(income - spend),
+    };
+  });
 
   const totalSpend = [...spendByCat.values()].reduce((a, b) => a + b, 0);
   const savings = round2(incomeTotal - totalSpend);
@@ -660,6 +676,7 @@ export async function buildReports(params: {
       keys: stacked.keys,
     },
     flexibilityTrends,
+    monthlyPnL,
     merchants,
     sankey: {
       nodes: sankeyNodes,
