@@ -41,6 +41,7 @@ type MonthPaceResponse = {
     freeToSpend: number | null;
     idealToDate: number;
     paceDelta: number | null;
+    projectedMonthEnd: number | null;
     dayOfMonth: number;
     daysInMonth: number;
   };
@@ -525,18 +526,28 @@ export default function BudgetsPage() {
     const pace = monthPace?.spendPace;
     if (!pace || pace.paceDelta == null || monthPace.budgetTotal <= 0) return null;
     const delta = pace.paceDelta;
+    const projected = pace.projectedMonthEnd;
+    const projectedSuffix =
+      projected != null &&
+      pace.dayOfMonth > 0 &&
+      pace.dayOfMonth < pace.daysInMonth
+        ? ` · projected ${formatCurrency(projected)} by month-end`
+        : "";
     if (Math.abs(delta) < 1) {
-      return { tone: "muted" as const, text: "Right on pace for this month" };
+      return {
+        tone: "muted" as const,
+        text: `Right on pace for this month${projectedSuffix}`,
+      };
     }
     if (delta > 0) {
       return {
         tone: "positive" as const,
-        text: `${formatCurrency(delta)} under ideal pace through today`,
+        text: `${formatCurrency(delta)} under ideal pace through today${projectedSuffix}`,
       };
     }
     return {
       tone: "danger" as const,
-      text: `${formatCurrency(Math.abs(delta))} over ideal pace through today`,
+      text: `${formatCurrency(Math.abs(delta))} over ideal pace through today${projectedSuffix}`,
     };
   }, [monthPace, formatCurrency]);
 
@@ -849,8 +860,8 @@ export default function BudgetsPage() {
                 <h2 className="mb-1 font-display text-lg">Month pace</h2>
                 <p className="text-xs text-[var(--muted)]">
                   {kind === "personal"
-                    ? "Cumulative spend vs ideal — committed bills count on day 1; flexible burns evenly."
-                    : "Cumulative spend this month vs ideal budget burn — are you on track?"}
+                    ? "Cumulative spend vs ideal (Housing day 1; flexible even). Projected keeps Housing as a floor and extrapolates the rest."
+                    : "Cumulative spend vs ideal burn, plus projected month-end at today’s smooth pace."}
                   <span className="ml-1">· {formatMonthLabel(month)}</span>
                 </p>
               </div>

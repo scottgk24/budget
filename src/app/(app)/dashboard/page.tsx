@@ -65,11 +65,13 @@ type DashboardData = {
       label: string;
       actual: number | null;
       ideal: number;
+      projected: number | null;
       date: string;
     }>;
     freeToSpend: number | null;
     idealToDate: number;
     paceDelta: number | null;
+    projectedMonthEnd?: number | null;
     dayOfMonth: number;
     daysInMonth: number;
   };

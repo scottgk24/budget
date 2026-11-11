@@ -24,10 +24,10 @@ import {
   type MetricsRangeId,
 } from "@/lib/format";
 import type { SpendPacePoint } from "@/lib/report-types";
-import { idealPaceAmount } from "@/lib/spend-pace";
+import { idealPaceAmount, projectedPaceAmount } from "@/lib/spend-pace";
 import type { Ledger } from "@/lib/types";
 
-export { idealPaceAmount } from "@/lib/spend-pace";
+export { idealPaceAmount, projectedPaceAmount } from "@/lib/spend-pace";
 
 type SpendBucket = "committed" | "flexible" | "reserve";
 
@@ -412,6 +412,11 @@ export async function buildSpendPace(params: {
     spendByDay.set(key, (spendByDay.get(key) ?? 0) + tx.amount);
   }
 
+  const dayOfMonth = Math.min(
+    today < start ? 0 : today > end ? dayCount : today.getDate(),
+    dayCount,
+  );
+
   let cumulative = 0;
   const series: SpendPacePoint[] = days.map((d, i) => {
     const key = format(d, "yyyy-MM-dd");
@@ -430,14 +435,36 @@ export async function buildSpendPace(params: {
       label: format(d, "MMM d"),
       actual: isFuture ? null : Math.round(cumulative * 100) / 100,
       ideal,
+      projected: null,
       date: key,
     };
   });
 
-  const dayOfMonth = Math.min(
-    today < start ? 0 : today > end ? dayCount : today.getDate(),
-    dayCount,
-  );
+  // Projection follows the chart's Actual line (filter-aware cumulative).
+  const spentFromSeries =
+    [...series].reverse().find((p) => p.actual != null)?.actual ?? 0;
+
+  for (let i = 0; i < series.length; i++) {
+    series[i].projected = projectedPaceAmount({
+      dayIndex: i,
+      dayCount,
+      daysElapsed: dayOfMonth,
+      spentToDate: spentFromSeries,
+      frontLoadedAmount,
+    });
+  }
+
+  const projectedMonthEnd =
+    dayOfMonth > 0 && dayOfMonth < dayCount
+      ? projectedPaceAmount({
+          dayIndex: dayCount - 1,
+          dayCount,
+          daysElapsed: dayOfMonth,
+          spentToDate: spentFromSeries,
+          frontLoadedAmount,
+        })
+      : null;
+
   const idealToDate =
     dayOfMonth > 0
       ? idealPaceAmount({
@@ -448,24 +475,28 @@ export async function buildSpendPace(params: {
         })
       : 0;
 
+  const spentToDate =
+    params.spentToDate > 0 ? params.spentToDate : spentFromSeries;
+
   const freeToSpend =
     budgetTotal > 0
-      ? Math.round((budgetTotal - params.spentToDate) * 100) / 100
+      ? Math.round((budgetTotal - spentToDate) * 100) / 100
       : null;
 
   const paceDelta =
     freeToSpend != null
-      ? Math.round((idealToDate - params.spentToDate) * 100) / 100
+      ? Math.round((idealToDate - spentToDate) * 100) / 100
       : null;
 
   return {
     series,
     budgetTotal,
     frontLoadedAmount,
-    spentToDate: params.spentToDate,
+    spentToDate,
     freeToSpend,
     idealToDate,
     paceDelta,
+    projectedMonthEnd,
     dayOfMonth,
     daysInMonth: dayCount,
   };

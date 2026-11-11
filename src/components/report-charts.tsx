@@ -32,6 +32,8 @@ const COLORS = {
   income: "#7ec07a",
   ideal: "#8fb396",
   pace: "#d4a857",
+  /** Projected month-end burn (distinct from Ideal + Actual). */
+  projected: "#c4785a",
   grid: "#2f5a3c",
   muted: "#8fb396",
   sankeyNode: "#2c5f2b",
@@ -192,12 +194,17 @@ export function SpendPaceChart({
   }
 
   const interactive = Boolean(onSelect);
+  const projectedValues = data
+    .map((d) => d.projected)
+    .filter((v): v is number => v != null);
+  const hasProjected = projectedValues.length > 0;
   const yDomain = spendPaceYDomain({
     budgetTotal,
     ideals: data.map((d) => d.ideal),
     actuals: data
       .map((d) => d.actual)
       .filter((v): v is number => v != null),
+    projected: projectedValues,
     frontLoadedAmount,
     elevateFloor,
   });
@@ -275,6 +282,19 @@ export function SpendPaceChart({
             connectNulls
             activeDot={{ r: 5, strokeWidth: 0 }}
           />
+          {hasProjected ? (
+            <Line
+              type="monotone"
+              dataKey="projected"
+              name="Projected pace"
+              stroke={COLORS.projected}
+              strokeDasharray="2 4"
+              strokeWidth={2}
+              dot={false}
+              connectNulls
+              activeDot={{ r: 4, strokeWidth: 0 }}
+            />
+          ) : null}
           {budgetTotal > 0 ? (
             <ReferenceLine
               y={budgetTotal}
