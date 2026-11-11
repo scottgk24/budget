@@ -23,6 +23,33 @@ export function idealPaceAmount(params: {
 }
 
 /**
+ * Linear projected cumulative spend for day `dayIndex` (0-based), based on
+ * average daily burn through `daysElapsed` (1-based today).
+ *
+ * ```
+ * projected(day) = spentToDate × (dayIndex + 1) / daysElapsed
+ * monthEnd       = spentToDate × dayCount / daysElapsed
+ * ```
+ *
+ * Null before today (Actual owns the past), when the month hasn't started,
+ * or when the month is already complete (nothing left to project).
+ */
+export function projectedPaceAmount(params: {
+  dayIndex: number;
+  dayCount: number;
+  /** 1-based days elapsed this month (today's date, clamped). */
+  daysElapsed: number;
+  spentToDate: number;
+}): number | null {
+  const { dayIndex, dayCount, daysElapsed, spentToDate } = params;
+  if (dayCount <= 0 || dayIndex < 0 || dayIndex >= dayCount) return null;
+  if (daysElapsed <= 0 || daysElapsed >= dayCount) return null;
+  if (dayIndex < daysElapsed - 1) return null;
+  if (spentToDate <= 0) return null;
+  return Math.round(((spentToDate * (dayIndex + 1)) / daysElapsed) * 100) / 100;
+}
+
+/**
  * Y-axis domain for Month pace. When `elevateFloor` is set (All-funds view),
  * start slightly below the mortgage front-load (Housing budget) so the chart
  * isn't half empty below the mortgage. Other filters keep a $0 baseline.
@@ -35,12 +62,21 @@ export function spendPaceYDomain(params: {
   budgetTotal: number;
   ideals: number[];
   actuals: number[];
+  /** Projected future points (may exceed budget). */
+  projected?: number[];
   /** Front-loaded committed/reserve amount; only elevates when > 0 and elevateFloor. */
   frontLoadedAmount?: number;
   elevateFloor?: boolean;
 }): [number, number] {
   const { budgetTotal, ideals, actuals } = params;
-  const seriesMax = Math.max(budgetTotal, ...ideals, ...actuals, 0);
+  const projected = params.projected ?? [];
+  const seriesMax = Math.max(
+    budgetTotal,
+    ...ideals,
+    ...actuals,
+    ...projected,
+    0,
+  );
   const yMax = Math.max(seriesMax, 1);
 
   const front = Math.max(0, params.frontLoadedAmount ?? 0);

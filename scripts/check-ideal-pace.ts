@@ -1,8 +1,12 @@
 /**
- * Sanity checks for mortgage-aware ideal pace math.
+ * Sanity checks for mortgage-aware ideal pace + projected pace math.
  * Run: npx tsx scripts/check-ideal-pace.ts
  */
-import { idealPaceAmount, spendPaceYDomain } from "../src/lib/spend-pace";
+import {
+  idealPaceAmount,
+  projectedPaceAmount,
+  spendPaceYDomain,
+} from "../src/lib/spend-pace";
 
 function assertClose(actual: number, expected: number, label: string) {
   if (Math.abs(actual - expected) > 0.011) {
@@ -132,6 +136,71 @@ assertClose(
     throw new Error(`floor too high (looks like all-committed): ${yMin}`);
   }
   console.log(`ok  mortgage-only floor despite tiny day-1 actual: [${yMin}, ${yMax}]`);
+}
+
+// Projected pace: linear extrapolation of average daily burn.
+{
+  const daysElapsed = 10;
+  const spent = 1000;
+  // Today (index 9): equals spent
+  assertClose(
+    projectedPaceAmount({
+      dayIndex: daysElapsed - 1,
+      dayCount,
+      daysElapsed,
+      spentToDate: spent,
+    })!,
+    spent,
+    "projected meets actual on today",
+  );
+  // Month-end
+  assertClose(
+    projectedPaceAmount({
+      dayIndex: dayCount - 1,
+      dayCount,
+      daysElapsed,
+      spentToDate: spent,
+    })!,
+    (spent * dayCount) / daysElapsed,
+    "projected month-end = spent × days / elapsed",
+  );
+  // Past days stay null (Actual owns history)
+  if (
+    projectedPaceAmount({
+      dayIndex: 0,
+      dayCount,
+      daysElapsed,
+      spentToDate: spent,
+    }) != null
+  ) {
+    throw new Error("projected should be null before today");
+  }
+  console.log("ok  projected null before today");
+  // Complete month → no projection
+  if (
+    projectedPaceAmount({
+      dayIndex: 20,
+      dayCount,
+      daysElapsed: dayCount,
+      spentToDate: spent,
+    }) != null
+  ) {
+    throw new Error("projected should be null when month complete");
+  }
+  console.log("ok  projected null when month complete");
+}
+
+// Y max includes projected overshoot
+{
+  const [, yMax] = spendPaceYDomain({
+    budgetTotal: 6000,
+    ideals: [3100, 6000],
+    actuals: [4000],
+    projected: [4000, 12000],
+    frontLoadedAmount: 3000,
+    elevateFloor: true,
+  });
+  assertClose(yMax, 12000, "Y max includes projected month-end");
 }
 
 console.log("\nAll ideal-pace checks passed.");
