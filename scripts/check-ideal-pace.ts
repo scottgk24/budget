@@ -111,18 +111,27 @@ assertClose(
   assertClose(yMax, 6000, "Y max at budget ceiling");
   console.log(`ok  elevated Y domain: [${yMin}, ${yMax}]`);
 }
-// Day-1 Actual far below front-load (mortgage posts day 2) must NOT collapse to $0
+// Day-1 Actual far below mortgage floor (posts day 2) must NOT collapse to $0.
+// Floor is Housing (~$3456), not all committed+reserves (~$6–10k).
 {
+  const housing = 3456;
   const [yMin, yMax] = spendPaceYDomain({
     budgetTotal: 14073,
-    ideals: [10673, 10800, 14073],
+    ideals: [housing + 50, 4000, 14073],
     actuals: [666.5, 4408.76, 7651],
-    frontLoadedAmount: 10673,
+    frontLoadedAmount: housing,
     elevateFloor: true,
   });
-  assertClose(yMin, 10673 - Math.max(10673 * 0.04, 25), "Y min stays near front-load despite tiny day-1 actual");
+  assertClose(
+    yMin,
+    housing - Math.max(housing * 0.04, 25),
+    "Y min near Housing mortgage, not full committed+reserves",
+  );
   assertClose(yMax, 14073, "Y max at Family-scale ceiling");
-  console.log(`ok  pre-mortgage actual does not zero floor: [${yMin}, ${yMax}]`);
+  if (yMin > 4000) {
+    throw new Error(`floor too high (looks like all-committed): ${yMin}`);
+  }
+  console.log(`ok  mortgage-only floor despite tiny day-1 actual: [${yMin}, ${yMax}]`);
 }
 
 console.log("\nAll ideal-pace checks passed.");
