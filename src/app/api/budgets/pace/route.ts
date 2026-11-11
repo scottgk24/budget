@@ -126,15 +126,29 @@ export async function GET(req: Request) {
     // Invalid category for current fund scope → treat as all in scope
     const effectiveCategoryId = category?.id ?? "all";
 
+    /**
+     * Flexible pace must use category budgets (standing allotments), not
+     * `flexibleAssigned` from the fund plan. Assigned is income − committed −
+     * reserves and is often $0 early in the month before paychecks land — which
+     * made Ideal (and the chart) look like a flat zero even with real flexible
+     * spend. Free-to-spend still uses the fund-plan leftover below.
+     */
+    const scopedBudgetTotal = round2(
+      scoped.reduce((sum, c) => sum + monthlyBudgetFor(c), 0),
+    );
+
     let budgetTotal = 0;
     if (effectiveCategoryId !== "all" && category) {
       budgetTotal = monthlyBudgetFor(category);
-    } else if (isPersonal && fundScope === "flexible" && fundPlan) {
-      budgetTotal = Math.max(0, fundPlan.flexibleAssigned - fundPlan.carriedOverspend);
+    } else if (isPersonal && fundScope === "flexible") {
+      const fromPlan = fundPlan
+        ? Math.max(0, fundPlan.flexibleAssigned - fundPlan.carriedOverspend)
+        : 0;
+      budgetTotal = scopedBudgetTotal > 0 ? scopedBudgetTotal : fromPlan;
     } else if (isPersonal && fundScope === "committed" && fundPlan) {
-      budgetTotal = fundPlan.committedNeed;
+      budgetTotal = fundPlan.committedNeed > 0 ? fundPlan.committedNeed : scopedBudgetTotal;
     } else if (isPersonal && fundScope !== "all") {
-      budgetTotal = round2(scoped.reduce((sum, c) => sum + monthlyBudgetFor(c), 0));
+      budgetTotal = scopedBudgetTotal;
     } else {
       budgetTotal = round2(rows.reduce((sum, c) => sum + monthlyBudgetFor(c), 0));
     }
@@ -165,7 +179,8 @@ export async function GET(req: Request) {
       }
     }
 
-    // Single category → id filter. Fund scope alone → fundKind (matches Dashboard).
+    // Single category → id filter. Fund scope alone → fundKind (includes Review
+    // and other flexible-fund spend not shown as budget rows).
     const categoryIds =
       effectiveCategoryId !== "all" ? [effectiveCategoryId] : null;
     const paceFundKind: "all" | "flexible" | "committed" =
