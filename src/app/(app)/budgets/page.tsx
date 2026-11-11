@@ -903,6 +903,16 @@ export default function BudgetsPage() {
               <SpendPaceChart
                 data={monthPace?.spendPace.series ?? []}
                 budgetTotal={monthPace?.budgetTotal ?? 0}
+                frontLoadedAmount={
+                  monthPace?.frontLoadedAmount ??
+                  monthPace?.spendPace.frontLoadedAmount ??
+                  0
+                }
+                elevateFloor={
+                  kind === "personal" &&
+                  effectiveFundScope === "all" &&
+                  effectiveCategoryId === "all"
+                }
                 emptyLabel="Set a budget to see this month’s pace."
                 onSelect={(point: SpendPacePoint) => {
                   const { start, end } = monthRange(month);
