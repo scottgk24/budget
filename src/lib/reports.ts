@@ -24,7 +24,10 @@ import {
   type MetricsRangeId,
 } from "@/lib/format";
 import type { SpendPacePoint } from "@/lib/report-types";
+import { idealPaceAmount } from "@/lib/spend-pace";
 import type { Ledger } from "@/lib/types";
+
+export { idealPaceAmount } from "@/lib/spend-pace";
 
 type SpendBucket = "committed" | "flexible" | "reserve";
 
@@ -338,12 +341,21 @@ export async function buildSpendPace(params: {
   fundKind?: "all" | "flexible" | "committed" | "reserve";
   flexibility?: "all" | "discretionary" | "fixed";
   /**
+   * Budget recognized on day 1 (committed / lumpy). The remainder of
+   * `budgetTotal` is paced evenly. Defaults to 0 (classic straight-line).
+   */
+  frontLoadedAmount?: number;
+  /**
    * When non-null, only these category ids count toward actual spend.
    * Pass `[]` for an empty scope (zero spend); omit/null for all categories.
    */
   categoryIds?: string[] | null;
 }) {
   const { workspaceId, ledger, month, budgetTotal } = params;
+  const frontLoadedAmount = Math.min(
+    Math.max(0, params.frontLoadedAmount ?? 0),
+    Math.max(0, budgetTotal),
+  );
   const fundKind =
     params.fundKind ??
     (params.flexibility === "discretionary"
@@ -403,10 +415,12 @@ export async function buildSpendPace(params: {
   let cumulative = 0;
   const series: SpendPacePoint[] = days.map((d, i) => {
     const key = format(d, "yyyy-MM-dd");
-    const ideal =
-      budgetTotal > 0
-        ? Math.round(((budgetTotal * (i + 1)) / dayCount) * 100) / 100
-        : 0;
+    const ideal = idealPaceAmount({
+      dayIndex: i,
+      dayCount,
+      budgetTotal,
+      frontLoadedAmount,
+    });
     const isFuture = d > today;
     if (!isFuture) {
       cumulative += spendByDay.get(key) ?? 0;
@@ -425,8 +439,13 @@ export async function buildSpendPace(params: {
     dayCount,
   );
   const idealToDate =
-    budgetTotal > 0 && dayOfMonth > 0
-      ? Math.round(((budgetTotal * dayOfMonth) / dayCount) * 100) / 100
+    dayOfMonth > 0
+      ? idealPaceAmount({
+          dayIndex: dayOfMonth - 1,
+          dayCount,
+          budgetTotal,
+          frontLoadedAmount,
+        })
       : 0;
 
   const freeToSpend =
@@ -442,6 +461,7 @@ export async function buildSpendPace(params: {
   return {
     series,
     budgetTotal,
+    frontLoadedAmount,
     spentToDate: params.spentToDate,
     freeToSpend,
     idealToDate,

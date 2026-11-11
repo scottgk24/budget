@@ -32,8 +32,9 @@ function parseFundScope(raw: string | null): FundScope {
 }
 
 /**
- * Current-month on-track pace for Budgets: cumulative actual vs ideal burn.
- * Filters: category (all | id) and fund scope (all | flexible | committed).
+ * Current-month on-track pace for Budgets: cumulative actual vs ideal.
+ * Ideal front-loads committed/reserve budgets (mortgage-aware), then burns
+ * flexible evenly. Filters: category (all | id) and fund scope.
  */
 export async function GET(req: Request) {
   try {
@@ -138,6 +139,32 @@ export async function GET(req: Request) {
       budgetTotal = round2(rows.reduce((sum, c) => sum + monthlyBudgetFor(c), 0));
     }
 
+    /**
+     * Ideal line = committed/lumpy front-load + even flexible burn.
+     * - All funds: front-load committed + reserve category budgets
+     * - Committed (or a committed category): front-load the whole ceiling
+     * - Flexible: classic even burn (front-load 0)
+     */
+    let frontLoadedAmount = 0;
+    if (isPersonal && budgetTotal > 0) {
+      if (effectiveCategoryId !== "all" && category) {
+        if (categoryFundKind(category) === "committed") {
+          frontLoadedAmount = budgetTotal;
+        }
+      } else if (fundScope === "committed") {
+        frontLoadedAmount = budgetTotal;
+      } else if (fundScope === "all") {
+        frontLoadedAmount = round2(
+          rows
+            .filter((c) => {
+              const kind = categoryFundKind(c);
+              return kind === "committed" || kind === "reserve";
+            })
+            .reduce((sum, c) => sum + monthlyBudgetFor(c), 0),
+        );
+      }
+    }
+
     // Single category → id filter. Fund scope alone → fundKind (matches Dashboard).
     const categoryIds =
       effectiveCategoryId !== "all" ? [effectiveCategoryId] : null;
@@ -152,6 +179,7 @@ export async function GET(req: Request) {
       spentToDate: 0,
       fundKind: paceFundKind,
       categoryIds,
+      frontLoadedAmount,
     });
 
     const spentToDate =
@@ -182,6 +210,7 @@ export async function GET(req: Request) {
       fundKind: fundScope,
       categoryId: effectiveCategoryId,
       budgetTotal,
+      frontLoadedAmount,
       spendPace,
     });
   } catch (err) {
