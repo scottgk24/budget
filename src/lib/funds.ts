@@ -63,6 +63,7 @@ export type FundMonthSnapshot = {
   committedNeed: number;
   flexibleAssigned: number;
   flexibleSpent: number;
+  /** Always 0 — Flexible left is month-self-contained (kept for API shape). */
   carriedOverspend: number;
   bufferOpening: number;
   bufferCovered: number;
@@ -424,7 +425,8 @@ export async function computeFundMonth(opts: {
     coversByMonth.set(c.month, list);
   }
 
-  let carriedOverspend = 0;
+  // Flexible is month-self-contained: do not carry prior uncovered overspend
+  // into Flexible left. Buffer/reserves still roll via lookback.
   let bufferClosing = 0;
   const reserveClosing = new Map<string, number>(
     funds.filter((f) => f.kind === "reserve").map((f) => [f.id, 0]),
@@ -472,7 +474,9 @@ export async function computeFundMonth(opts: {
     const flexibleSpent = spentByFund.get(flexible.id) ?? 0;
 
     const bufferOpening = bufferClosing;
-    const netFlex = round2(flexibleAssigned - carriedOverspend - flexibleSpent);
+    // This month only: assignment vs spend (no prior-month loss carry).
+    const carriedOverspend = 0;
+    const netFlex = round2(flexibleAssigned - flexibleSpent);
     const leftover = Math.max(0, netFlex);
     const overspend = Math.max(0, -netFlex);
     const bufferCovered = round2(Math.min(overspend, bufferOpening));
@@ -544,7 +548,6 @@ export async function computeFundMonth(opts: {
       reservesUnderfunded,
       funds: fundRows,
     };
-    carriedOverspend = uncovered;
   }
 
   return snapshot;

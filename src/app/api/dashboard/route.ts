@@ -222,14 +222,12 @@ export async function GET(req: Request) {
         reserveSpend = fundPlan.funds
           .filter((f) => f.kind === "reserve")
           .reduce((sum, f) => sum + f.spent, 0);
-        flexibleBudget = Math.max(0, fundPlan.flexibleAssigned - fundPlan.carriedOverspend);
+        // Month-self-contained: this month's assignment vs this month's spend.
+        flexibleBudget = Math.max(0, fundPlan.flexibleAssigned);
         committedBudget = fundPlan.committedNeed;
         flexibleLeft =
           Math.round(
-            (fundPlan.flexibleAssigned -
-              fundPlan.carriedOverspend -
-              fundPlan.flexibleSpent) *
-              100,
+            (fundPlan.flexibleAssigned - fundPlan.flexibleSpent) * 100,
           ) / 100;
         flexibleOverspend = flexibleLeft < 0 ? Math.abs(flexibleLeft) : 0;
       }

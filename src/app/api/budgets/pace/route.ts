@@ -163,9 +163,7 @@ export async function GET(req: Request) {
     if (effectiveCategoryId !== "all" && category) {
       budgetTotal = monthlyBudgetFor(category);
     } else if (isPersonal && fundScope === "flexible") {
-      const fromPlan = fundPlan
-        ? Math.max(0, fundPlan.flexibleAssigned - fundPlan.carriedOverspend)
-        : 0;
+      const fromPlan = fundPlan ? Math.max(0, fundPlan.flexibleAssigned) : 0;
       budgetTotal = scopedBudgetTotal > 0 ? scopedBudgetTotal : fromPlan;
     } else if (isPersonal && fundScope === "committed" && fundPlan) {
       budgetTotal = fundPlan.committedNeed > 0 ? fundPlan.committedNeed : scopedBudgetTotal;
@@ -233,7 +231,7 @@ export async function GET(req: Request) {
       fundPlan
     ) {
       const flexibleLeft = round2(
-        fundPlan.flexibleAssigned - fundPlan.carriedOverspend - fundPlan.flexibleSpent,
+        fundPlan.flexibleAssigned - fundPlan.flexibleSpent,
       );
       spendPace.freeToSpend = Math.max(0, flexibleLeft);
     }
