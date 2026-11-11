@@ -415,10 +415,8 @@ export default function BudgetsPage() {
 
   const discretionaryBudgeted = fundPlan?.flexibleAssigned ?? 0;
   const discretionarySpent = fundPlan?.flexibleSpent ?? 0;
-  const flexibleLeft =
-    (fundPlan?.flexibleAssigned ?? 0) -
-    (fundPlan?.carriedOverspend ?? 0) -
-    (fundPlan?.flexibleSpent ?? 0);
+  // Month-self-contained: this month's assignment vs this month's spend.
+  const flexibleLeft = discretionaryBudgeted - discretionarySpent;
 
   const rowIds = useMemo(() => new Set(rows.map((c) => c.id)), [rows]);
 
@@ -794,13 +792,7 @@ export default function BudgetsPage() {
                 </p>
                 <p className="mt-1 text-xs text-[var(--muted)]">
                   {formatCurrency(discretionarySpent)} of{" "}
-                  {formatCurrency(
-                    Math.max(0, discretionaryBudgeted - (fundPlan?.carriedOverspend ?? 0)),
-                  )}{" "}
-                  this month
-                  {fundPlan && fundPlan.carriedOverspend > 0
-                    ? ` · ${formatCurrency(fundPlan.carriedOverspend)} from last month`
-                    : ""}
+                  {formatCurrency(Math.max(0, discretionaryBudgeted))} this month
                 </p>
               </Card>
             ) : null}
