@@ -138,33 +138,32 @@ assertClose(
   console.log(`ok  mortgage-only floor despite tiny day-1 actual: [${yMin}, ${yMax}]`);
 }
 
-// Projected pace: linear extrapolation of average daily burn.
+// Projected pace: Flexible (no front-load) = classic daily burn.
 {
   const daysElapsed = 10;
   const spent = 1000;
-  // Today (index 9): equals spent
   assertClose(
     projectedPaceAmount({
       dayIndex: daysElapsed - 1,
       dayCount,
       daysElapsed,
       spentToDate: spent,
+      frontLoadedAmount: 0,
     })!,
     spent,
-    "projected meets actual on today",
+    "projected meets actual on today (flexible)",
   );
-  // Month-end
   assertClose(
     projectedPaceAmount({
       dayIndex: dayCount - 1,
       dayCount,
       daysElapsed,
       spentToDate: spent,
+      frontLoadedAmount: 0,
     })!,
     (spent * dayCount) / daysElapsed,
-    "projected month-end = spent × days / elapsed",
+    "flexible month-end = spent × days / elapsed",
   );
-  // Past days stay null (Actual owns history)
   if (
     projectedPaceAmount({
       dayIndex: 0,
@@ -176,7 +175,6 @@ assertClose(
     throw new Error("projected should be null before today");
   }
   console.log("ok  projected null before today");
-  // Complete month → no projection
   if (
     projectedPaceAmount({
       dayIndex: 20,
@@ -188,6 +186,65 @@ assertClose(
     throw new Error("projected should be null when month complete");
   }
   console.log("ok  projected null when month complete");
+}
+
+// All-funds: do NOT treat mortgage as daily burn.
+{
+  const daysElapsed = 11;
+  const housing = 3456;
+  const spent = 5646; // housing already in + ~2190 smooth
+  const smooth = spent - housing;
+  const monthEnd = housing + (smooth * dayCount) / daysElapsed;
+  assertClose(
+    projectedPaceAmount({
+      dayIndex: daysElapsed - 1,
+      dayCount,
+      daysElapsed,
+      spentToDate: spent,
+      frontLoadedAmount: housing,
+    })!,
+    spent,
+    "mortgage-aware projected meets actual today",
+  );
+  assertClose(
+    projectedPaceAmount({
+      dayIndex: dayCount - 1,
+      dayCount,
+      daysElapsed,
+      spentToDate: spent,
+      frontLoadedAmount: housing,
+    })!,
+    monthEnd,
+    "mortgage-aware month-end = Housing + smooth × days/elapsed",
+  );
+  // Naive spent×days/elapsed would be ~15.4k; must stay well below that.
+  const naive = (spent * dayCount) / daysElapsed;
+  if (monthEnd >= naive - 1) {
+    throw new Error(
+      `mortgage-aware projection too high (${monthEnd}); looks like naive ${naive}`,
+    );
+  }
+  console.log(
+    `ok  mortgage-aware beats naive burn (${monthEnd.toFixed(0)} << ${naive.toFixed(0)})`,
+  );
+}
+
+// Pre-mortgage day-1 Actual must not invent a burn rate.
+{
+  const daysElapsed = 1;
+  const housing = 3456;
+  const spent = 667;
+  assertClose(
+    projectedPaceAmount({
+      dayIndex: dayCount - 1,
+      dayCount,
+      daysElapsed,
+      spentToDate: spent,
+      frontLoadedAmount: housing,
+    })!,
+    housing,
+    "pre-mortgage projects to Housing floor, not 667×30",
+  );
 }
 
 // Y max includes projected overshoot

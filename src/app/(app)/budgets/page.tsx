@@ -860,8 +860,8 @@ export default function BudgetsPage() {
                 <h2 className="mb-1 font-display text-lg">Month pace</h2>
                 <p className="text-xs text-[var(--muted)]">
                   {kind === "personal"
-                    ? "Cumulative spend vs ideal (Housing day 1; flexible even) and projected pace at today’s burn."
-                    : "Cumulative spend vs ideal burn, plus projected month-end at today’s pace."}
+                    ? "Cumulative spend vs ideal (Housing day 1; flexible even). Projected keeps Housing as a floor and extrapolates the rest."
+                    : "Cumulative spend vs ideal burn, plus projected month-end at today’s smooth pace."}
                   <span className="ml-1">· {formatMonthLabel(month)}</span>
                 </p>
               </div>

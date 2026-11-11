@@ -450,6 +450,7 @@ export async function buildSpendPace(params: {
       dayCount,
       daysElapsed: dayOfMonth,
       spentToDate: spentFromSeries,
+      frontLoadedAmount,
     });
   }
 
@@ -460,6 +461,7 @@ export async function buildSpendPace(params: {
           dayCount,
           daysElapsed: dayOfMonth,
           spentToDate: spentFromSeries,
+          frontLoadedAmount,
         })
       : null;
 

@@ -23,16 +23,23 @@ export function idealPaceAmount(params: {
 }
 
 /**
- * Linear projected cumulative spend for day `dayIndex` (0-based), based on
- * average daily burn through `daysElapsed` (1-based today).
+ * Projected cumulative spend for day `dayIndex` (0-based).
+ *
+ * Lumpy front-load (Housing / mortgage) is **not** treated as daily burn.
+ * Only the smooth remainder is extrapolated; the front-load is a floor.
  *
  * ```
- * projected(day) = spentToDate × (dayIndex + 1) / daysElapsed
- * monthEnd       = spentToDate × dayCount / daysElapsed
+ * smoothSpent = max(0, spentToDate − frontLoaded)
+ * monthEnd    = frontLoaded + smoothSpent × dayCount / daysElapsed
+ * projected   = linear from today's Actual → monthEnd
  * ```
  *
- * Null before today (Actual owns the past), when the month hasn't started,
- * or when the month is already complete (nothing left to project).
+ * When `frontLoaded` is 0 (Flexible filter), this collapses to classic
+ * `spentToDate × day / daysElapsed`. When spend is still below the mortgage
+ * floor, month-end lands on the floor (mortgage will post) instead of
+ * inventing a burn rate from a tiny day-1 Actual.
+ *
+ * Null before today, before the month starts, or when the month is complete.
  */
 export function projectedPaceAmount(params: {
   dayIndex: number;
@@ -40,13 +47,31 @@ export function projectedPaceAmount(params: {
   /** 1-based days elapsed this month (today's date, clamped). */
   daysElapsed: number;
   spentToDate: number;
+  /** Housing (or committed) amount recognized up front — not daily burn. */
+  frontLoadedAmount?: number;
 }): number | null {
   const { dayIndex, dayCount, daysElapsed, spentToDate } = params;
   if (dayCount <= 0 || dayIndex < 0 || dayIndex >= dayCount) return null;
   if (daysElapsed <= 0 || daysElapsed >= dayCount) return null;
   if (dayIndex < daysElapsed - 1) return null;
-  if (spentToDate <= 0) return null;
-  return Math.round(((spentToDate * (dayIndex + 1)) / daysElapsed) * 100) / 100;
+
+  const front = Math.max(0, params.frontLoadedAmount ?? 0);
+  if (spentToDate <= 0 && front <= 0) return null;
+
+  const spent = Math.max(0, spentToDate);
+  const smoothSpent = Math.max(0, spent - front);
+  const monthEnd = front + (smoothSpent * dayCount) / daysElapsed;
+
+  // Meet Actual on today; linear to mortgage-aware month-end afterward.
+  if (dayIndex === daysElapsed - 1) {
+    return Math.round(spent * 100) / 100;
+  }
+
+  const remainingSpan = dayCount - daysElapsed;
+  if (remainingSpan <= 0) return null;
+  const daysAhead = dayIndex + 1 - daysElapsed;
+  const value = spent + ((monthEnd - spent) * daysAhead) / remainingSpan;
+  return Math.round(value * 100) / 100;
 }
 
 /**
