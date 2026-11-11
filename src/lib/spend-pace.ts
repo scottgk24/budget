@@ -23,13 +23,12 @@ export function idealPaceAmount(params: {
 }
 
 /**
- * Y-axis domain for Month pace. When `elevateFloor` is set (All-funds view with
- * a committed front-load), start slightly below that floor so the chart isn't
- * half empty below the mortgage. Other filters keep a $0 baseline.
+ * Y-axis domain for Month pace. When `elevateFloor` is set (All-funds view),
+ * start slightly below the mortgage front-load (Housing budget) so the chart
+ * isn't half empty below the mortgage. Other filters keep a $0 baseline.
  *
  * Do **not** pull the floor down to early Actual values: mortgage often posts
- * day 2–few, so day-1 Actual can be a few hundred while frontLoaded is ~$10k.
- * Lowering to that Actual (then bailing under an 8% threshold) put Y back at $0.
+ * day 2–few, so day-1 Actual can be a few hundred while Housing is ~$3k.
  * `allowDataOverflow` on the chart lets pre-mortgage points sit below the axis.
  */
 export function spendPaceYDomain(params: {

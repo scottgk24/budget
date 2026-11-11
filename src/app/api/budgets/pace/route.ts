@@ -33,9 +33,31 @@ function parseFundScope(raw: string | null): FundScope {
 
 /**
  * Current-month on-track pace for Budgets: cumulative actual vs ideal.
- * Ideal front-loads committed/reserve budgets (mortgage-aware), then burns
- * flexible evenly. Filters: category (all | id) and fund scope.
+ * All-funds ideal / Y-floor front-loads the Housing (mortgage) budget only —
+ * not every committed+reserve line — then burns the remainder evenly.
+ * Filters: category (all | id) and fund scope.
  */
+
+/** Giant early-month bill for All-funds pace: Housing, else largest committed. */
+function mortgageFrontLoadAmount<
+  T extends { id: string; name: string; budgetPeriod: string },
+>(
+  rows: T[],
+  monthlyBudgetFor: (cat: T) => number,
+  categoryFundKind: (cat: T) => FundKind | null,
+): number {
+  const housing = rows.find((c) => c.name === "Housing");
+  if (housing) {
+    const amt = monthlyBudgetFor(housing);
+    if (amt > 0) return round2(amt);
+  }
+  let largest = 0;
+  for (const cat of rows) {
+    if (categoryFundKind(cat) !== "committed") continue;
+    largest = Math.max(largest, monthlyBudgetFor(cat));
+  }
+  return round2(largest);
+}
 export async function GET(req: Request) {
   try {
     const { workspace } = await ensureUserAndWorkspace();
@@ -154,10 +176,10 @@ export async function GET(req: Request) {
     }
 
     /**
-     * Ideal line = committed/lumpy front-load + even flexible burn.
-     * - All funds: front-load committed + reserve category budgets
-     * - Committed (or a committed category): front-load the whole ceiling
-     * - Flexible: classic even burn (front-load 0)
+     * Ideal + Y-floor front-load:
+     * - All funds: Housing (mortgage) only — not utilities/reserves (~$6k+)
+     * - Committed (or a committed category): whole ceiling
+     * - Flexible: 0 (even burn)
      */
     let frontLoadedAmount = 0;
     if (isPersonal && budgetTotal > 0) {
@@ -168,13 +190,10 @@ export async function GET(req: Request) {
       } else if (fundScope === "committed") {
         frontLoadedAmount = budgetTotal;
       } else if (fundScope === "all") {
-        frontLoadedAmount = round2(
-          rows
-            .filter((c) => {
-              const kind = categoryFundKind(c);
-              return kind === "committed" || kind === "reserve";
-            })
-            .reduce((sum, c) => sum + monthlyBudgetFor(c), 0),
+        frontLoadedAmount = mortgageFrontLoadAmount(
+          rows,
+          monthlyBudgetFor,
+          (cat) => categoryFundKind(cat),
         );
       }
     }
