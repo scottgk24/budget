@@ -32,9 +32,11 @@ type PaceFundScope = "all" | "flexible" | "committed";
 
 type MonthPaceResponse = {
   budgetTotal: number;
+  frontLoadedAmount?: number;
   spendPace: {
     series: SpendPacePoint[];
     budgetTotal: number;
+    frontLoadedAmount?: number;
     spentToDate: number;
     freeToSpend: number | null;
     idealToDate: number;
@@ -846,8 +848,9 @@ export default function BudgetsPage() {
               <div>
                 <h2 className="mb-1 font-display text-lg">Month pace</h2>
                 <p className="text-xs text-[var(--muted)]">
-                  Cumulative spend this month vs ideal budget burn — are you on
-                  track?
+                  {kind === "personal"
+                    ? "Cumulative spend vs ideal — committed bills count on day 1; flexible burns evenly."
+                    : "Cumulative spend this month vs ideal budget burn — are you on track?"}
                   <span className="ml-1">· {formatMonthLabel(month)}</span>
                 </p>
               </div>
@@ -900,6 +903,16 @@ export default function BudgetsPage() {
               <SpendPaceChart
                 data={monthPace?.spendPace.series ?? []}
                 budgetTotal={monthPace?.budgetTotal ?? 0}
+                frontLoadedAmount={
+                  monthPace?.frontLoadedAmount ??
+                  monthPace?.spendPace.frontLoadedAmount ??
+                  0
+                }
+                elevateFloor={
+                  kind === "personal" &&
+                  effectiveFundScope === "all" &&
+                  effectiveCategoryId === "all"
+                }
                 emptyLabel="Set a budget to see this month’s pace."
                 onSelect={(point: SpendPacePoint) => {
                   const { start, end } = monthRange(month);

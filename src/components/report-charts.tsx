@@ -20,6 +20,7 @@ import {
 import { useMoneyFormat } from "@/components/privacy-context";
 import type { CategoryMonthSeries } from "@/lib/category-month-series";
 import type { SpendPacePoint } from "@/lib/report-types";
+import { spendPaceYDomain } from "@/lib/spend-pace";
 import { format, parseISO } from "date-fns";
 
 export type { SpendPacePoint };
@@ -162,11 +163,20 @@ function MoneyTooltip({
 export function SpendPaceChart({
   data,
   budgetTotal,
+  frontLoadedAmount = 0,
+  elevateFloor = false,
   onSelect,
   emptyLabel = "Set a budget to see spend pace.",
 }: {
   data: SpendPacePoint[];
   budgetTotal: number;
+  /** Committed/reserve amount recognized on day 1 (All-funds ideal). */
+  frontLoadedAmount?: number;
+  /**
+   * When true (All-funds default), raise the Y-axis near the front-loaded
+   * mortgage floor. Flexible / category filters keep elevateFloor false → $0.
+   */
+  elevateFloor?: boolean;
   emptyLabel?: string;
   onSelect?: (point: SpendPacePoint) => void;
 }) {
@@ -182,6 +192,15 @@ export function SpendPaceChart({
   }
 
   const interactive = Boolean(onSelect);
+  const yDomain = spendPaceYDomain({
+    budgetTotal,
+    ideals: data.map((d) => d.ideal),
+    actuals: data
+      .map((d) => d.actual)
+      .filter((v): v is number => v != null),
+    frontLoadedAmount,
+    elevateFloor,
+  });
 
   function handleClick(state: {
     activeIndex?: number | string | null;
@@ -223,6 +242,8 @@ export function SpendPaceChart({
             minTickGap={28}
           />
           <YAxis
+            domain={yDomain}
+            allowDataOverflow
             tick={{ fill: COLORS.muted, fontSize: 11 }}
             tickLine={false}
             axisLine={false}
