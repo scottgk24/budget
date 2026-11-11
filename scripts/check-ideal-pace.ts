@@ -111,5 +111,18 @@ assertClose(
   assertClose(yMax, 6000, "Y max at budget ceiling");
   console.log(`ok  elevated Y domain: [${yMin}, ${yMax}]`);
 }
+// Day-1 Actual far below front-load (mortgage posts day 2) must NOT collapse to $0
+{
+  const [yMin, yMax] = spendPaceYDomain({
+    budgetTotal: 14073,
+    ideals: [10673, 10800, 14073],
+    actuals: [666.5, 4408.76, 7651],
+    frontLoadedAmount: 10673,
+    elevateFloor: true,
+  });
+  assertClose(yMin, 10673 - Math.max(10673 * 0.04, 25), "Y min stays near front-load despite tiny day-1 actual");
+  assertClose(yMax, 14073, "Y max at Family-scale ceiling");
+  console.log(`ok  pre-mortgage actual does not zero floor: [${yMin}, ${yMax}]`);
+}
 
 console.log("\nAll ideal-pace checks passed.");

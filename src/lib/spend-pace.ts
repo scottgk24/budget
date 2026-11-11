@@ -26,6 +26,11 @@ export function idealPaceAmount(params: {
  * Y-axis domain for Month pace. When `elevateFloor` is set (All-funds view with
  * a committed front-load), start slightly below that floor so the chart isn't
  * half empty below the mortgage. Other filters keep a $0 baseline.
+ *
+ * Do **not** pull the floor down to early Actual values: mortgage often posts
+ * day 2–few, so day-1 Actual can be a few hundred while frontLoaded is ~$10k.
+ * Lowering to that Actual (then bailing under an 8% threshold) put Y back at $0.
+ * `allowDataOverflow` on the chart lets pre-mortgage points sit below the axis.
  */
 export function spendPaceYDomain(params: {
   budgetTotal: number;
@@ -37,11 +42,6 @@ export function spendPaceYDomain(params: {
 }): [number, number] {
   const { budgetTotal, ideals, actuals } = params;
   const seriesMax = Math.max(budgetTotal, ...ideals, ...actuals, 0);
-  const seriesMin = Math.min(
-    ...ideals,
-    ...(actuals.length > 0 ? actuals : [0]),
-    seriesMax,
-  );
   const yMax = Math.max(seriesMax, 1);
 
   const front = Math.max(0, params.frontLoadedAmount ?? 0);
@@ -50,14 +50,9 @@ export function spendPaceYDomain(params: {
   }
 
   const pad = Math.max(front * 0.04, 25);
-  let yMin = Math.max(0, front - pad);
-  // Don't clip Actual if it sits below the front-load (e.g. mortgage not posted yet).
-  if (seriesMin < yMin) {
-    yMin = Math.max(0, seriesMin - pad);
-  }
-  // If that collapses us near zero, just use $0.
-  if (yMin < yMax * 0.08) {
+  const yMin = Math.max(0, front - pad);
+  if (yMin >= yMax) {
     return [0, yMax];
   }
-  return [Math.min(yMin, yMax - 1), yMax];
+  return [yMin, yMax];
 }
